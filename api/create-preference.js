@@ -132,15 +132,4 @@ module.exports = async (req, res) => {
     await supabase.from('orders').update({ mp_preference_id: mpData.id }).eq('id', order.id);
 
     var checkoutUrl = mpData.sandbox_init_point || mpData.init_point;
-    if(!checkoutUrl){
-      throw new Error('Mercado Pago no regresó un link de pago válido');
-    }
-
-    res.status(200).json({ checkoutUrl: checkoutUrl });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error del servidor: ' + err.message });
-  }
-};
-
-
+    if(!checkoutUr
