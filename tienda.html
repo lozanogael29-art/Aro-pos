@@ -90,6 +90,25 @@
   .status-banner.pending{background:#F3EAD0;color:#7A5A20;}
 
   .checkout-error{color:#a63333;font-size:12.5px;margin-top:-6px;margin-bottom:12px;}
+
+  .field-row{display:flex;gap:10px;}
+  .field-row .field{flex:1;}
+
+  .ship-opt{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:13px 14px;border:1.5px solid var(--crudo-line);border-radius:12px;margin-bottom:8px;
+    cursor:pointer;background:#fff;}
+  .ship-opt.selected{border-color:var(--vino);background:#faf1e7;}
+  .ship-opt b{font-size:13.5px;display:block;}
+  .ship-opt span{font-size:11.5px;color:var(--negro-soft);}
+  .ship-opt .sp-price{font-weight:700;color:var(--vino);font-size:13.5px;white-space:nowrap;}
+
+  .chip-group{margin-bottom:16px;}
+  .chip-group-label{font-size:12px;font-weight:600;color:var(--negro-soft);margin-bottom:8px;}
+  .chip-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{padding:9px 16px;border-radius:20px;border:1.5px solid var(--crudo-line);
+    background:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .chip.selected{border-color:var(--vino);background:var(--vino);color:var(--crudo);}
+  .variant-summary{font-size:13px;color:var(--negro-soft);margin:4px 0 16px;min-height:18px;}
 </style>
 </head>
 <body>
@@ -115,8 +134,9 @@
     <div class="modal">
       <button class="close-x" id="variant-modal-close">✕</button>
       <h3 id="variant-modal-title"></h3>
-      <p style="font-size:12.5px;color:var(--negro-soft);margin:0 0 14px;">Elige la variante que quieres.</p>
-      <div id="variant-list"></div>
+      <div id="variant-chips" style="margin-top:14px;"></div>
+      <div id="variant-summary" class="variant-summary"></div>
+      <button class="btn btn-primary" id="btn-add-variant" disabled>Agregar al carrito</button>
     </div>
   </div>
 
@@ -135,11 +155,26 @@
   <div class="modal-backdrop" id="checkout-modal-backdrop">
     <div class="modal">
       <button class="close-x" id="checkout-modal-close">✕</button>
-      <h3>Tus datos</h3>
-      <p style="font-size:12.5px;color:var(--negro-soft);margin:0 0 16px;">Para avisarte del estado de tu pedido.</p>
+      <h3>¿Cómo lo quieres recibir?</h3>
+      <div id="shipping-options" style="margin-top:12px;"></div>
+
+      <div id="address-fields" style="display:none;margin-top:6px;">
+        <div class="field"><label>Calle y número</label><input type="text" id="ship-street"></div>
+        <div class="field"><label>Colonia</label><input type="text" id="ship-colonia"></div>
+        <div class="field-row">
+          <div class="field"><label>Ciudad</label><input type="text" id="ship-city"></div>
+          <div class="field"><label>Estado</label><input type="text" id="ship-state"></div>
+        </div>
+        <div class="field"><label>Código Postal</label><input type="text" id="ship-zip" inputmode="numeric"></div>
+        <div class="field"><label>Referencias (opcional)</label><input type="text" id="ship-ref"></div>
+      </div>
+
+      <h3 style="margin-top:8px;">Tus datos</h3>
       <div class="field"><label>Nombre</label><input type="text" id="chk-name"></div>
       <div class="field"><label>Correo</label><input type="email" id="chk-email" inputmode="email"></div>
       <div class="field"><label>Teléfono</label><input type="tel" id="chk-phone" inputmode="tel"></div>
+
+      <div class="cart-total"><span>Total</span><span id="checkout-total-amount">$0</span></div>
       <div id="checkout-error" class="checkout-error"></div>
       <button class="btn btn-primary" id="btn-pay">Pagar con Mercado Pago</button>
     </div>
@@ -231,28 +266,100 @@
     return el ? el.innerHTML : '';
   }
 
+  // ---------- SELECTOR DE VARIANTES CON CHIPS ----------
+  var variantState = { color: null, talla: null };
+
+  function uniq(arr){
+    var seen = {}, out = [];
+    arr.forEach(function(x){ if(!seen[x]){ seen[x] = true; out.push(x); } });
+    return out;
+  }
+
   function openVariantPicker(baseCode){
     var group = products.filter(function(p){ return p.baseCode === baseCode; });
     if(group.length === 0) return;
+    variantState = { color: null, talla: null };
     document.getElementById('variant-modal-title').textContent = group[0].name;
-    var list = document.getElementById('variant-list');
-    list.innerHTML = group.map(function(p){
-      var label = [p.color, p.talla].filter(Boolean).join(' · ') || p.code;
-      var out = p.stock <= 0;
-      return '<div class="variant-row ' + (out?'out':'') + '" data-code="' + escapeHtml(p.code) + '">' +
-        '<div class="vinfo"><b>' + escapeHtml(label) + '</b><span>' + (out ? 'agotado' : p.stock + ' disponibles') + '</span></div>' +
-        '<div class="vprice">' + money(p.price) + '</div>' +
-        '</div>';
-    }).join('');
-    list.querySelectorAll('.variant-row').forEach(function(el){
-      el.addEventListener('click', function(){
-        addToCart(el.dataset.code);
-        document.getElementById('variant-modal-backdrop').classList.remove('show');
-      });
+
+    var colors = uniq(group.map(function(p){ return p.color; }).filter(Boolean));
+    var tallas = uniq(group.map(function(p){ return p.talla; }).filter(Boolean));
+
+    var html = '';
+    if(colors.length){
+      html += '<div class="chip-group"><div class="chip-group-label">Color</div><div class="chip-row" id="color-chips">' +
+        colors.map(function(c){ return '<button type="button" class="chip" data-color="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'; }).join('') +
+        '</div></div>';
+    }
+    if(tallas.length){
+      html += '<div class="chip-group"><div class="chip-group-label">Talla</div><div class="chip-row" id="talla-chips">' +
+        tallas.map(function(t){ return '<button type="button" class="chip" data-talla="' + escapeHtml(t) + '">' + escapeHtml(t) + '</button>'; }).join('') +
+        '</div></div>';
+    }
+    document.getElementById('variant-chips').innerHTML = html;
+
+    if(colors.length === 1) variantState.color = colors[0];
+    if(tallas.length === 1) variantState.talla = tallas[0];
+
+    var colorEls = document.querySelectorAll('#color-chips .chip');
+    var tallaEls = document.querySelectorAll('#talla-chips .chip');
+    colorEls.forEach(function(el){
+      el.addEventListener('click', function(){ variantState.color = el.dataset.color; refreshVariantChips(group); });
     });
+    tallaEls.forEach(function(el){
+      el.addEventListener('click', function(){ variantState.talla = el.dataset.talla; refreshVariantChips(group); });
+    });
+
+    refreshVariantChips(group);
     document.getElementById('variant-modal-backdrop').classList.add('show');
   }
+
+  function refreshVariantChips(group){
+    var colorGroup = document.getElementById('color-chips');
+    var tallaGroup = document.getElementById('talla-chips');
+    if(colorGroup){
+      colorGroup.querySelectorAll('.chip').forEach(function(el){
+        el.classList.toggle('selected', el.dataset.color === variantState.color);
+      });
+    }
+    if(tallaGroup){
+      tallaGroup.querySelectorAll('.chip').forEach(function(el){
+        el.classList.toggle('selected', el.dataset.talla === variantState.talla);
+      });
+    }
+
+    var summaryEl = document.getElementById('variant-summary');
+    var addBtn = document.getElementById('btn-add-variant');
+
+    if((colorGroup && !variantState.color) || (tallaGroup && !variantState.talla)){
+      summaryEl.textContent = colorGroup && !variantState.color ? 'Elige un color.' : 'Elige una talla.';
+      addBtn.disabled = true;
+      addBtn.dataset.code = '';
+      return;
+    }
+
+    var match = group.find(function(p){
+      return (!colorGroup || p.color === variantState.color) && (!tallaGroup || p.talla === variantState.talla);
+    });
+    if(!match){
+      summaryEl.innerHTML = 'Esa combinación no está disponible.';
+      addBtn.disabled = true;
+      addBtn.dataset.code = '';
+      return;
+    }
+    var out = match.stock <= 0;
+    summaryEl.innerHTML = '<b>' + money(match.price) + '</b>' + (out ? ' · <span style="color:#a63333;">agotado</span>' : ' · ' + match.stock + ' disponibles');
+    addBtn.disabled = out;
+    addBtn.textContent = out ? 'Agotado' : 'Agregar al carrito';
+    addBtn.dataset.code = match.code;
+  }
+
   document.getElementById('variant-modal-close').addEventListener('click', function(){
+    document.getElementById('variant-modal-backdrop').classList.remove('show');
+  });
+  document.getElementById('btn-add-variant').addEventListener('click', function(){
+    var code = this.dataset.code;
+    if(!code) return;
+    addToCart(code);
     document.getElementById('variant-modal-backdrop').classList.remove('show');
   });
 
@@ -307,8 +414,7 @@
         });
       });
     }
-    var total = cart.reduce(function(a,c){ return a + c.price * c.qty; }, 0);
-    document.getElementById('cart-total-amount').textContent = money(total);
+    document.getElementById('cart-total-amount').textContent = money(subtotal());
   }
 
   document.getElementById('cart-fab').addEventListener('click', function(){
@@ -319,8 +425,61 @@
     document.getElementById('cart-modal-backdrop').classList.remove('show');
   });
 
+  // ---------- ENVÍO ----------
+  var SHIP_COSTS = { pickup: 0, leon: 59, nacional: 129 };
+  var FREE_SHIP_THRESHOLD = 899;
+  var shippingMethod = null;
+
+  function subtotal(){ return cart.reduce(function(a,c){ return a + c.price * c.qty; }, 0); }
+  function shippingCost(){
+    if(!shippingMethod || shippingMethod === 'pickup') return 0;
+    if(subtotal() >= FREE_SHIP_THRESHOLD) return 0;
+    return SHIP_COSTS[shippingMethod] || 0;
+  }
+  function grandTotal(){ return subtotal() + shippingCost(); }
+
+  function renderShippingOptions(){
+    var sub = subtotal();
+    var freeEligible = sub >= FREE_SHIP_THRESHOLD;
+    var opts = [
+      { key: 'pickup', label: 'Recoger en tienda', desc: 'Sin costo', price: 0 },
+      { key: 'leon', label: 'Envío dentro de León', desc: freeEligible ? 'Gratis en compras mayores a ' + money(FREE_SHIP_THRESHOLD) : '1-2 días hábiles', price: freeEligible ? 0 : SHIP_COSTS.leon },
+      { key: 'nacional', label: 'Envío nacional', desc: freeEligible ? 'Gratis en compras mayores a ' + money(FREE_SHIP_THRESHOLD) : '3-6 días hábiles', price: freeEligible ? 0 : SHIP_COSTS.nacional }
+    ];
+    var el = document.getElementById('shipping-options');
+    el.innerHTML = opts.map(function(o){
+      return '<div class="ship-opt ' + (shippingMethod === o.key ? 'selected' : '') + '" data-key="' + o.key + '">' +
+        '<div><b>' + o.label + '</b><span>' + o.desc + '</span></div>' +
+        '<div class="sp-price">' + (o.price === 0 ? 'Gratis' : money(o.price)) + '</div>' +
+        '</div>';
+    }).join('');
+    el.querySelectorAll('.ship-opt').forEach(function(node){
+      node.addEventListener('click', function(){
+        shippingMethod = node.dataset.key;
+        document.getElementById('address-fields').style.display = (shippingMethod === 'pickup') ? 'none' : 'block';
+        renderShippingOptions();
+        renderCheckoutTotal();
+      });
+    });
+  }
+
+  function renderCheckoutTotal(){
+    document.getElementById('checkout-total-amount').textContent = money(grandTotal());
+  }
+
   document.getElementById('btn-go-checkout').addEventListener('click', function(){
     if(cart.length === 0) return;
+    shippingMethod = null;
+    document.getElementById('address-fields').style.display = 'none';
+    document.getElementById('ship-street').value = '';
+    document.getElementById('ship-colonia').value = '';
+    document.getElementById('ship-city').value = '';
+    document.getElementById('ship-state').value = '';
+    document.getElementById('ship-zip').value = '';
+    document.getElementById('ship-ref').value = '';
+    document.getElementById('checkout-error').textContent = '';
+    renderShippingOptions();
+    renderCheckoutTotal();
     document.getElementById('cart-modal-backdrop').classList.remove('show');
     document.getElementById('checkout-modal-backdrop').classList.add('show');
   });
@@ -335,7 +494,23 @@
     var errEl = document.getElementById('checkout-error');
     errEl.textContent = "";
 
+    if(!shippingMethod){ errEl.textContent = "Elige cómo quieres recibir tu pedido."; return; }
     if(!name || !email){ errEl.textContent = "Escribe al menos tu nombre y correo."; return; }
+
+    var address = null;
+    if(shippingMethod !== 'pickup'){
+      var street = document.getElementById('ship-street').value.trim();
+      var colonia = document.getElementById('ship-colonia').value.trim();
+      var city = document.getElementById('ship-city').value.trim();
+      var state = document.getElementById('ship-state').value.trim();
+      var zip = document.getElementById('ship-zip').value.trim();
+      var ref = document.getElementById('ship-ref').value.trim();
+      if(!street || !colonia || !city || !state || !zip){
+        errEl.textContent = "Completa tu dirección para el envío.";
+        return;
+      }
+      address = { street: street, colonia: colonia, city: city, state: state, zip: zip, ref: ref };
+    }
 
     var btn = this;
     btn.disabled = true; btn.textContent = "Conectando con Mercado Pago…";
@@ -346,7 +521,8 @@
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
           items: cart.map(function(c){ return { code: c.code, qty: c.qty }; }),
-          customer: { name: name, email: email, phone: phone }
+          customer: { name: name, email: email, phone: phone },
+          shipping: { method: shippingMethod, address: address }
         })
       });
       var data = await res.json();
