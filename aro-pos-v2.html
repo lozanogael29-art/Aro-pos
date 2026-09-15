@@ -78,6 +78,13 @@
   .login-box .subtitle{color:rgba(242,233,216,0.6);text-align:center;margin:0 0 22px;font-size:13px;}
   .login-box .field label{color:rgba(242,233,216,0.7);}
   .login-error{color:#e08a8a;font-size:12.5px;margin:-6px 0 14px;min-height:16px;}
+  .pw-wrap{position:relative;}
+  .pw-wrap input{padding-right:70px;}
+  #btn-toggle-pw{
+    position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:var(--negro-soft);font-size:12px;font-weight:600;
+    padding:6px 8px;cursor:pointer;
+  }
 
   /* LOCATION BAR */
   .loc-bar{
@@ -591,11 +598,14 @@
       <p class="subtitle">Inicia sesión con tu cuenta de colaborador.</p>
       <div class="field">
         <label>Correo</label>
-        <input type="email" id="login-email" autocomplete="email" inputmode="email">
+        <input type="email" id="login-email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off">
       </div>
       <div class="field">
         <label>Contraseña</label>
-        <input type="password" id="login-password" autocomplete="current-password">
+        <div class="pw-wrap">
+          <input type="password" id="login-password" autocomplete="current-password" autocapitalize="none" autocorrect="off">
+          <button type="button" id="btn-toggle-pw">Mostrar</button>
+        </div>
       </div>
       <div id="login-error" class="login-error"></div>
       <button class="btn btn-primary btn-block" id="btn-login">Entrar</button>
@@ -2498,9 +2508,16 @@
     document.getElementById('login-error').textContent = msg || "";
   }
 
+  document.getElementById('btn-toggle-pw').addEventListener('click', function(){
+    var input = document.getElementById('login-password');
+    var showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    this.textContent = showing ? 'Mostrar' : 'Ocultar';
+  });
+
   document.getElementById('btn-login').addEventListener('click', async function(){
     var email = document.getElementById('login-email').value.trim();
-    var password = document.getElementById('login-password').value;
+    var password = document.getElementById('login-password').value.trim();
     if(!email || !password){ showLoginError("Escribe tu correo y contraseña."); return; }
     var btn = document.getElementById('btn-login');
     btn.disabled = true; btn.textContent = "Entrando…";
