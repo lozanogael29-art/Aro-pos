@@ -1,5 +1,8 @@
 const { createClient } = require('@supabase/supabase-js');
 
+const SHIP_COSTS = { pickup: 0, leon: 59, nacional: 129 };
+const FREE_SHIP_THRESHOLD = 899;
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -7,10 +10,23 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { items, customer } = req.body || {};
+    const { items, customer, shipping } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({ error: 'Carrito vacío' });
       return;
+    }
+
+    const shipMethod = shipping && shipping.method;
+    if (!shipMethod || !(shipMethod in SHIP_COSTS)) {
+      res.status(400).json({ error: 'Elige cómo quieres recibir tu pedido' });
+      return;
+    }
+    if (shipMethod !== 'pickup') {
+      const a = shipping.address;
+      if (!a || !a.street || !a.colonia || !a.city || !a.state || !a.zip) {
+        res.status(400).json({ error: 'Falta la dirección de envío' });
+        return;
+      }
     }
 
     const supabase = createClient(
@@ -27,7 +43,7 @@ module.exports = async (req, res) => {
     if (error) throw error;
 
     const orderItems = [];
-    let total = 0;
+    let subtotal = 0;
 
     for (const it of items) {
       const p = products.find((x) => x.code === it.code);
@@ -47,8 +63,11 @@ module.exports = async (req, res) => {
         price: Number(p.price),
         qty,
       });
-      total += Number(p.price) * qty;
+      subtotal += Number(p.price) * qty;
     }
+
+    const shipCost = subtotal >= FREE_SHIP_THRESHOLD ? 0 : SHIP_COSTS[shipMethod];
+    const total = subtotal + shipCost;
 
     const { data: order, error: orderErr } = await supabase
       .from('orders')
@@ -59,6 +78,9 @@ module.exports = async (req, res) => {
         customer_name: customer && customer.name ? customer.name : '',
         customer_email: customer && customer.email ? customer.email : '',
         customer_phone: customer && customer.phone ? customer.phone : '',
+        shipping_method: shipMethod,
+        shipping_cost: shipCost,
+        shipping_address: shipMethod !== 'pickup' ? shipping.address : null,
       })
       .select()
       .single();
@@ -67,6 +89,22 @@ module.exports = async (req, res) => {
 
     const siteUrl = `https://${req.headers.host}`;
 
+    const mpItems = orderItems.map((i) => ({
+      title: i.name,
+      quantity: i.qty,
+      unit_price: i.price,
+      currency_id: 'MXN',
+    }));
+    if (shipCost > 0) {
+      const shipLabel = shipMethod === 'leon' ? 'Envío dentro de León' : 'Envío nacional';
+      mpItems.push({
+        title: shipLabel,
+        quantity: 1,
+        unit_price: shipCost,
+        currency_id: 'MXN',
+      });
+    }
+
     const mpRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
       headers: {
@@ -74,12 +112,7 @@ module.exports = async (req, res) => {
         Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
       },
       body: JSON.stringify({
-        items: orderItems.map((i) => ({
-          title: i.name,
-          quantity: i.qty,
-          unit_price: i.price,
-          currency_id: 'MXN',
-        })),
+        items: mpItems,
         external_reference: order.id,
         notification_url: `${siteUrl}/api/webhook`,
         back_urls: {
@@ -109,4 +142,5 @@ module.exports = async (req, res) => {
     res.status(500).json({ error: 'Error del servidor: ' + err.message });
   }
 };
+
 
