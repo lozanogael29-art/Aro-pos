@@ -343,6 +343,33 @@
     padding:13px 14px;margin-bottom:10px;
   }
   .an-cards{display:flex;gap:8px;margin:16px 0 4px;}
+  .cash-denom-section h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--negro-soft);}
+  .cash-denom-row{
+    display:flex;align-items:center;gap:10px;margin-bottom:8px;
+  }
+  .cash-denom-row .cd-label{
+    width:52px;flex-shrink:0;font-weight:700;font-size:14px;color:var(--vino);
+  }
+  .cash-denom-row .cd-qty{
+    width:64px;flex-shrink:0;border:1.5px solid var(--crudo-line);border-radius:8px;
+    padding:8px 10px;font-size:14px;text-align:center;font-family:inherit;
+  }
+  .cash-denom-row .cd-times{color:var(--negro-soft);font-size:12px;flex-shrink:0;}
+  .cash-denom-row .cd-subtotal{
+    flex:1;text-align:right;font-size:13px;font-weight:600;color:var(--negro-soft);
+  }
+  .cash-summary{margin-top:18px;border-top:1px dashed var(--crudo-line);padding-top:14px;}
+  .cs-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;}
+  .cs-row b{font-size:14.5px;}
+  .cs-diff{margin-top:6px;padding-top:10px;border-top:1px solid var(--crudo-line);}
+  .cs-diff b{font-size:17px;}
+  .cs-diff.ok b{color:#2C5F2D;}
+  .cs-diff.surplus b{color:#2C6F9E;}
+  .cs-diff.shortage b{color:#a63333;}
+  .corte-diff-badge{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;margin-top:4px;display:inline-block;}
+  .corte-diff-badge.ok{background:#DCEEDC;color:#2C5F2D;}
+  .corte-diff-badge.surplus{background:#D6E7F2;color:#2C6F9E;}
+  .corte-diff-badge.shortage{background:#F3D9D9;color:#7A2020;}
   .an-card{
     flex:1;background:#fff;border:1px solid var(--crudo-line);border-radius:10px;
     padding:12px 10px;text-align:center;
@@ -786,6 +813,9 @@
         <button class="btn btn-ghost btn-sm" id="btn-import-csv" style="flex-shrink:0;">⬆ CSV</button>
         <input type="file" accept=".csv,text/csv" id="file-csv" style="display:none;">
       </div>
+      <div class="inv-toolbar">
+        <button class="btn btn-outline-vino btn-sm btn-block" id="btn-bulk-photos">📷 Subir fotos por lote</button>
+      </div>
 
       <div id="inv-list" class="inv-list"></div>
 
@@ -930,6 +960,27 @@
     </div>
   </div>
 
+  <!-- FOTOS POR LOTE -->
+  <div class="modal-backdrop" id="bulk-photos-modal-backdrop">
+    <div class="modal">
+      <button class="close-x" id="bulk-photos-modal-close">✕</button>
+      <h3>Subir fotos por lote</h3>
+      <p class="an-hint">
+        Nombra cada foto igual al <b>código del producto</b> antes de subirla
+        (ej. <code>P100-NEGRO-CH.jpg</code>). Si le pones solo el código base
+        (ej. <code>P100.jpg</code>), esa misma foto se asigna a todas sus variantes.
+        Puedes seleccionar muchas fotos a la vez.
+      </p>
+      <button class="btn btn-vino btn-block" id="btn-select-bulk-photos">Elegir fotos de la galería</button>
+      <input type="file" accept="image/*" multiple id="file-bulk-photos" style="display:none;">
+      <div id="bulk-photos-progress" style="display:none;margin-top:16px;">
+        <div class="an-bar-track"><div class="an-bar-fill" id="bulk-photos-bar" style="width:0%"></div></div>
+        <p class="an-hint" id="bulk-photos-status" style="margin-top:8px;">Procesando…</p>
+      </div>
+      <div id="bulk-photos-report" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
   <!-- TRASPASO -->
   <div class="modal-backdrop" id="traspaso-modal-backdrop">
     <div class="modal">
@@ -954,6 +1005,35 @@
       <div class="modal-actions">
         <button class="btn btn-primary btn-block" id="btn-confirm-traspaso">Traspasar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- CONTEO DE CAJA -->
+  <div class="modal-backdrop" id="cash-count-modal-backdrop">
+    <div class="modal">
+      <button class="close-x" id="cash-count-modal-close">✕</button>
+      <h3>Contar caja</h3>
+      <p class="an-hint" id="cash-count-loc-label"></p>
+
+      <div class="field">
+        <label>Caja de cambio (fondo con el que empezaste)</label>
+        <input type="number" inputmode="decimal" id="cash-fondo" placeholder="0" value="0">
+      </div>
+
+      <div class="cash-denom-section">
+        <h4>Billetes</h4>
+        <div id="cash-bills"></div>
+        <h4 style="margin-top:14px;">Monedas</h4>
+        <div id="cash-coins"></div>
+      </div>
+
+      <div class="cash-summary">
+        <div class="cs-row"><span>Total contado</span><b id="cash-total-counted">$0</b></div>
+        <div class="cs-row"><span>Esperado (fondo + ventas en efectivo)</span><b id="cash-total-expected">$0</b></div>
+        <div class="cs-row cs-diff" id="cash-diff-row"><span>Diferencia</span><b id="cash-diff">$0</b></div>
+      </div>
+
+      <button class="btn btn-vino btn-block" id="btn-confirm-corte" style="margin-top:16px;">Confirmar y cerrar corte</button>
     </div>
   </div>
 
@@ -2304,6 +2384,110 @@
     reader.readAsDataURL(file);
   }
 
+  // ---------- FOTOS POR LOTE ----------
+  function readFileAsDataUrl(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(e){ resolve(e.target.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  function resizeAndCompressAsync(source){
+    return new Promise(function(resolve){
+      resizeAndCompress(source, 640, 0.62, resolve);
+    });
+  }
+  function stripExt(filename){
+    return filename.replace(/\.[a-zA-Z0-9]+$/, '').trim().toUpperCase();
+  }
+
+  document.getElementById('btn-bulk-photos').addEventListener('click', function(){
+    document.getElementById('bulk-photos-report').innerHTML = '';
+    document.getElementById('bulk-photos-progress').style.display = 'none';
+    document.getElementById('bulk-photos-modal-backdrop').classList.add('show');
+  });
+  document.getElementById('bulk-photos-modal-close').addEventListener('click', function(){
+    document.getElementById('bulk-photos-modal-backdrop').classList.remove('show');
+  });
+  document.getElementById('bulk-photos-modal-backdrop').addEventListener('click', function(e){
+    if(e.target === this) this.classList.remove('show');
+  });
+  document.getElementById('btn-select-bulk-photos').addEventListener('click', function(){
+    document.getElementById('file-bulk-photos').click();
+  });
+
+  document.getElementById('file-bulk-photos').addEventListener('change', async function(e){
+    var files = Array.prototype.slice.call(e.target.files);
+    this.value = "";
+    if(files.length === 0) return;
+
+    var progressWrap = document.getElementById('bulk-photos-progress');
+    var bar = document.getElementById('bulk-photos-bar');
+    var status = document.getElementById('bulk-photos-status');
+    var report = document.getElementById('bulk-photos-report');
+    progressWrap.style.display = 'block';
+    report.innerHTML = '';
+
+    var matched = [];
+    var unmatched = [];
+    var touchedProducts = {};
+
+    for(var i = 0; i < files.length; i++){
+      var file = files[i];
+      status.textContent = 'Procesando ' + (i+1) + ' de ' + files.length + '…';
+      bar.style.width = Math.round(((i+1) / files.length) * 100) + '%';
+
+      var key = stripExt(file.name);
+      var exact = products.find(function(p){ return p.code.toUpperCase() === key; });
+      var baseMatches = exact ? [] : products.filter(function(p){ return p.baseCode.toUpperCase() === key; });
+
+      if(!exact && baseMatches.length === 0){
+        unmatched.push(file.name);
+        continue;
+      }
+
+      try{
+        var dataUrl = await readFileAsDataUrl(file);
+        var compressed = await resizeAndCompressAsync(dataUrl);
+        if(exact){
+          exact.photo = compressed;
+          touchedProducts[exact.code] = true;
+          matched.push(file.name + ' → ' + exact.name + (exact.color ? ' (' + exact.color + (exact.talla ? ' ' + exact.talla : '') + ')' : ''));
+        }else{
+          baseMatches.forEach(function(p){ p.photo = compressed; touchedProducts[p.code] = true; });
+          matched.push(file.name + ' → ' + baseMatches[0].name + ' (' + baseMatches.length + ' variantes)');
+        }
+      }catch(err){
+        unmatched.push(file.name + ' (error al leerla)');
+      }
+    }
+
+    status.textContent = 'Guardando en tu catálogo…';
+    var toSave = products.filter(function(p){ return touchedProducts[p.code]; });
+    await Promise.all(toSave.map(saveProduct));
+
+    progressWrap.style.display = 'none';
+    renderInventory();
+    renderSaleList();
+
+    var reportHtml = '<p class="an-hint"><b>' + matched.length + '</b> fotos asignadas' +
+      (unmatched.length ? ', <b>' + unmatched.length + '</b> sin producto que coincida.' : '.') + '</p>';
+    if(matched.length){
+      reportHtml += '<div style="max-height:160px;overflow-y:auto;margin-bottom:10px;">' +
+        matched.map(function(m){ return '<div class="an-list-row" style="font-size:11.5px;">' + escapeHtml(m) + '</div>'; }).join('') +
+        '</div>';
+    }
+    if(unmatched.length){
+      reportHtml += '<p class="an-hint" style="color:#a63333;">No se encontró producto para:</p>' +
+        '<div style="max-height:120px;overflow-y:auto;">' +
+        unmatched.map(function(m){ return '<div class="an-list-row" style="font-size:11.5px;">' + escapeHtml(m) + '</div>'; }).join('') +
+        '</div>';
+    }
+    document.getElementById('bulk-photos-report').innerHTML = reportHtml;
+    toast(matched.length + ' fotos guardadas');
+  });
+
   document.getElementById('file-camera').addEventListener('change', function(e){
     handlePhotoFile(e.target.files[0]);
     this.value = "";
@@ -2418,8 +2602,15 @@
         var d = new Date(c.timestamp);
         var dateStr = d.toLocaleDateString('es-MX', {day:'numeric', month:'short', year:'numeric'});
         var timeStr = d.toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'});
+        var diffBadge = '';
+        if(c.cashCount){
+          var diff = c.cashCount.diff;
+          if(diff === 0) diffBadge = '<span class="corte-diff-badge ok">Cuadró ✓</span>';
+          else if(diff > 0) diffBadge = '<span class="corte-diff-badge surplus">Sobraron ' + money(diff) + '</span>';
+          else diffBadge = '<span class="corte-diff-badge shortage">Faltaron ' + money(Math.abs(diff)) + '</span>';
+        }
         return '<div class="corte-row">' +
-          '<div><div class="cr-date">' + dateStr + '</div><div class="cr-range">' + timeStr + ' · ' + c.count + (c.count === 1 ? ' venta' : ' ventas') + '</div></div>' +
+          '<div><div class="cr-date">' + dateStr + '</div><div class="cr-range">' + timeStr + ' · ' + c.count + (c.count === 1 ? ' venta' : ' ventas') + '</div>' + diffBadge + '</div>' +
           '<div class="cr-total">' + money(c.total) + '</div>' +
           '</div>';
       }).join('');
@@ -2431,8 +2622,96 @@
   document.getElementById('btn-cerrar-corte').addEventListener('click', async function(){
     var open = salesSinceLastCorte();
     if(open.length === 0) return;
+    openCashCountModal();
+  });
+
+  // ---------- CONTEO DE CAJA (billetes y monedas) ----------
+  var CASH_BILLS = [500, 200, 100, 50, 20];
+  var CASH_COINS = [10, 5, 2, 1];
+
+  function denomRowHtml(d){
+    return '<div class="cash-denom-row">' +
+      '<span class="cd-label">$' + d + '</span>' +
+      '<input type="number" inputmode="numeric" min="0" class="cd-qty" data-denom="' + d + '" placeholder="0">' +
+      '<span class="cd-times">×' + d + ' =</span>' +
+      '<span class="cd-subtotal" data-denom="' + d + '">$0</span>' +
+      '</div>';
+  }
+
+  document.getElementById('cash-bills').innerHTML = CASH_BILLS.map(denomRowHtml).join('');
+  document.getElementById('cash-coins').innerHTML = CASH_COINS.map(denomRowHtml).join('');
+
+  function computeCashCount(){
+    var total = 0;
+    CASH_BILLS.concat(CASH_COINS).forEach(function(d){
+      var input = document.querySelector('.cd-qty[data-denom="' + d + '"]');
+      var qty = Number(input.value) || 0;
+      var sub = qty * d;
+      document.querySelector('.cd-subtotal[data-denom="' + d + '"]').textContent = money(sub);
+      total += sub;
+    });
+
+    var fondo = Number(document.getElementById('cash-fondo').value) || 0;
+    var open = salesSinceLastCorte();
+    var totals = paymentTotals(open);
+    var expected = fondo + totals.Efectivo;
+    var diff = total - expected;
+
+    document.getElementById('cash-total-counted').textContent = money(total);
+    document.getElementById('cash-total-expected').textContent = money(expected);
+
+    var diffEl = document.getElementById('cash-diff');
+    var diffRow = document.getElementById('cash-diff-row');
+    if(diff === 0){
+      diffEl.textContent = "Cuadra ✓";
+      diffRow.className = 'cs-row cs-diff ok';
+    }else if(diff > 0){
+      diffEl.textContent = "Sobran " + money(diff);
+      diffRow.className = 'cs-row cs-diff surplus';
+    }else{
+      diffEl.textContent = "Faltan " + money(Math.abs(diff));
+      diffRow.className = 'cs-row cs-diff shortage';
+    }
+
+    return { total: total, fondo: fondo, expectedEfectivo: totals.Efectivo, expected: expected, diff: diff };
+  }
+
+  document.querySelectorAll('.cd-qty').forEach(function(el){
+    el.addEventListener('input', computeCashCount);
+  });
+  document.getElementById('cash-fondo').addEventListener('input', computeCashCount);
+
+  function openCashCountModal(){
+    document.getElementById('cash-count-loc-label').textContent =
+      "Cierre de corte — " + LOCATIONS[currentLocation];
+    document.querySelectorAll('.cd-qty').forEach(function(el){ el.value = ""; });
+    document.getElementById('cash-fondo').value = "";
+    computeCashCount();
+    document.getElementById('cash-count-modal-backdrop').classList.add('show');
+  }
+  document.getElementById('cash-count-modal-close').addEventListener('click', function(){
+    document.getElementById('cash-count-modal-backdrop').classList.remove('show');
+  });
+  document.getElementById('cash-count-modal-backdrop').addEventListener('click', function(e){
+    if(e.target === this) this.classList.remove('show');
+  });
+
+  document.getElementById('btn-confirm-corte').addEventListener('click', async function(){
+    var open = salesSinceLastCorte();
+    if(open.length === 0){
+      document.getElementById('cash-count-modal-backdrop').classList.remove('show');
+      return;
+    }
+    var cashCount = computeCashCount();
     var totals = paymentTotals(open);
     var total = open.reduce(function(a,s){ return a + s.total; }, 0);
+
+    var denomBreakdown = {};
+    CASH_BILLS.concat(CASH_COINS).forEach(function(d){
+      var qty = Number(document.querySelector('.cd-qty[data-denom="' + d + '"]').value) || 0;
+      if(qty > 0) denomBreakdown[d] = qty;
+    });
+
     cortes.unshift({
       id: uid(),
       timestamp: new Date().toISOString(),
@@ -2440,11 +2719,21 @@
       location: currentLocation,
       totals: totals,
       total: total,
-      count: open.length
+      count: open.length,
+      cashCount: {
+        fondo: cashCount.fondo,
+        denoms: denomBreakdown,
+        totalContado: cashCount.total,
+        expected: cashCount.expected,
+        diff: cashCount.diff
+      }
     });
     await saveCortes();
+    document.getElementById('cash-count-modal-backdrop').classList.remove('show');
     renderCaja();
-    toast("Corte de " + LOCATIONS[currentLocation] + " cerrado · " + money(total));
+    var diffMsg = cashCount.diff === 0 ? "cuadró ✓" :
+      (cashCount.diff > 0 ? "sobraron " + money(cashCount.diff) : "faltaron " + money(Math.abs(cashCount.diff)));
+    toast("Corte de " + LOCATIONS[currentLocation] + " cerrado · " + money(total) + " · " + diffMsg);
   });
 
   // ---------- Calendario de ventas (también por ubicación) ----------
