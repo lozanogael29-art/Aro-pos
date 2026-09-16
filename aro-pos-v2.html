@@ -2164,14 +2164,24 @@
 
   // ================= IMPORTAR CSV =================
   function parseCSV(text){
+    // Quita el BOM invisible que a veces agregan Excel/Numbers al exportar.
+    text = text.replace(/^\uFEFF/, '');
     var lines = text.replace(/\r/g, "").split("\n").filter(function(l){ return l.trim() !== ""; });
     if(lines.length < 2) return [];
+
+    // Detecta si el archivo usa coma o punto y coma como separador
+    // (Excel/Numbers en español suelen exportar con ";").
+    var headerLine = lines[0];
+    var commaCount = (headerLine.match(/,/g) || []).length;
+    var semicolonCount = (headerLine.match(/;/g) || []).length;
+    var delim = semicolonCount > commaCount ? ';' : ',';
+
     function splitLine(line){
       var out = [], cur = "", inQuotes = false;
       for(var i=0;i<line.length;i++){
         var ch = line[i];
         if(ch === '"'){ inQuotes = !inQuotes; }
-        else if(ch === ',' && !inQuotes){ out.push(cur); cur = ""; }
+        else if(ch === delim && !inQuotes){ out.push(cur); cur = ""; }
         else{ cur += ch; }
       }
       out.push(cur);
@@ -2193,6 +2203,19 @@
       if(row[candidates[i]] !== undefined && row[candidates[i]] !== "") return row[candidates[i]];
     }
     return "";
+  }
+
+  // Convierte números en formato en español ("97,17" o "1.234,56") a formato JS normal.
+  function parseLocaleNumber(str){
+    if(!str) return 0;
+    str = String(str).trim();
+    if(str.indexOf(',') !== -1 && str.indexOf('.') !== -1){
+      str = str.replace(/\./g, '').replace(',', '.');
+    }else if(str.indexOf(',') !== -1){
+      str = str.replace(',', '.');
+    }
+    var n = Number(str);
+    return isNaN(n) ? 0 : n;
   }
 
   document.getElementById('btn-import-csv').addEventListener('click', function(){
@@ -2232,8 +2255,8 @@
         // y se muestran como variantes al buscar, en vez de concatenarlos al nombre.
         var name = desc;
 
-        var price = Number(findField(row, ['precio','price']) || 0);
-        var stockVal = Number(findField(row, ['existencias','stock','cantidad','qty']) || 0);
+        var price = parseLocaleNumber(findField(row, ['precio','price']));
+        var stockVal = parseLocaleNumber(findField(row, ['existencias','stock','cantidad','qty']));
         var category = findField(row, ['categoria','categoría','category']);
         var locRaw = findField(row, ['ubicacion','ubicación','location','tienda']).toLowerCase();
         var loc = currentLocation;
@@ -3389,7 +3412,7 @@
       var updated = 0, notFound = 0;
       rows.forEach(function(row){
         var code = findField(row, ['codigo','código','code','sku']);
-        var cost = Number(findField(row, ['costo','cost']) || 0);
+        var cost = parseLocaleNumber(findField(row, ['costo','cost']));
         if(!code) return;
         var p = products.find(function(x){ return x.code === code; });
         if(p){ p.cost = cost; updated++; }
