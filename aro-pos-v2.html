@@ -1151,7 +1151,7 @@
 
       <div class="an-section">
         <h4>Costos por producto</h4>
-        <p class="an-hint">Sube un CSV con columnas <b>codigo</b> y <b>costo</b> para actualizar el costo de tus productos.</p>
+        <p class="an-hint">Sube un CSV con columnas <b>codigo</b> y <b>costo</b> (puedes usar el código completo con talla, o solo el código base — y agregar una columna <b>color</b> — para aplicar el mismo costo a todas las tallas).</p>
         <button class="btn btn-outline-vino btn-sm btn-block" id="btn-import-costs">⬆ Subir CSV de costos</button>
         <input type="file" accept=".csv,text/csv" id="file-costs" style="display:none;">
       </div>
@@ -3409,18 +3409,42 @@
       catch(err){ toast("No se pudo leer el CSV"); return; }
       if(rows.length === 0){ toast("El archivo está vacío o no tiene el formato esperado"); return; }
 
-      var updated = 0, notFound = 0;
+      var updated = 0, notFound = 0, affectedProducts = 0;
+      var normColor = function(s){
+        return (s || "").toString().trim().toLowerCase()
+          .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+          .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+      };
       rows.forEach(function(row){
         var code = findField(row, ['codigo','código','code','sku']);
+        var color = findField(row, ['color']);
         var cost = parseLocaleNumber(findField(row, ['costo','cost']));
         if(!code) return;
-        var p = products.find(function(x){ return x.code === code; });
-        if(p){ p.cost = cost; updated++; }
-        else{ notFound++; }
+
+        // 1) Coincidencia exacta con el código completo de una variante (con talla)
+        var exact = products.find(function(x){ return x.code === code; });
+        if(exact){
+          exact.cost = cost; updated++; affectedProducts++;
+          return;
+        }
+
+        // 2) Coincidencia por código base (+ color si viene en el archivo) —
+        // aplica el mismo costo a todas las tallas de esa combinación.
+        var matches = products.filter(function(x){
+          if(x.baseCode !== code) return false;
+          if(color) return normColor(x.color) === normColor(color);
+          return true;
+        });
+        if(matches.length > 0){
+          matches.forEach(function(p){ p.cost = cost; affectedProducts++; });
+          updated++;
+        }else{
+          notFound++;
+        }
       });
 
       await saveProducts();
-      toast("Costos actualizados: " + updated + (notFound ? " · " + notFound + " códigos no encontrados" : ""));
+      toast("Costos actualizados: " + updated + " renglones (" + affectedProducts + " variantes)" + (notFound ? " · " + notFound + " no encontrados" : ""));
       openAnalysisModal();
     };
     reader.readAsText(file);
