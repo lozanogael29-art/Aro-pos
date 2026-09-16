@@ -343,6 +343,18 @@
     padding:13px 14px;margin-bottom:10px;
   }
   .an-cards{display:flex;gap:8px;margin:16px 0 4px;}
+  .gastos-card{background:#fff;border:1px solid var(--crudo-line);border-radius:14px;padding:16px;margin:14px 0 22px;}
+  .gastos-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .gastos-head h4{margin:0;font-size:14px;font-weight:600;}
+  .gasto-row{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:9px 0;border-bottom:1px solid var(--crudo-line);font-size:12.5px;
+  }
+  .gasto-row:last-child{border-bottom:none;}
+  .gasto-row .g-info b{display:block;font-size:13px;}
+  .gasto-row .g-info span{font-size:11px;color:var(--negro-soft);}
+  .gasto-row .g-amount{font-weight:700;color:#a63333;}
+  .gasto-row .g-del{background:none;border:none;color:#a63333;font-size:11px;cursor:pointer;font-family:inherit;margin-left:8px;}
   .cash-denom-section h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--negro-soft);}
   .cash-denom-row{
     display:flex;align-items:center;gap:10px;margin-bottom:8px;
@@ -609,6 +621,7 @@
   .cal-cell.selected .cal-daynum,.cal-cell.selected .cal-amt{color:var(--crudo);}
   .cal-daynum{font-size:12px;font-weight:600;}
   .cal-amt{font-size:8.5px;font-weight:600;color:var(--vino);margin-top:1px;line-height:1;}
+  .cal-gasto{font-size:7.5px;font-weight:600;color:#a63333;margin-top:1px;line-height:1;}
 
   /* ADMIN */
   .hist-head-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;}
@@ -837,6 +850,15 @@
         <button class="btn btn-vino" id="btn-cerrar-corte">Cerrar corte</button>
       </div>
 
+      <div class="gastos-card">
+        <div class="gastos-head">
+          <h4>Gastos — <span id="gastos-loc-label"></span></h4>
+          <button class="btn btn-outline-vino btn-sm" id="btn-add-gasto">+ Agregar</button>
+        </div>
+        <div class="caja-total-line"><span>Total de gastos</span><b id="gastos-total">$0</b></div>
+        <div id="gastos-list"></div>
+      </div>
+
       <div class="cortes-list">
         <h4>Cortes anteriores</h4>
         <div id="cortes-list-inner"></div>
@@ -1008,6 +1030,38 @@
     </div>
   </div>
 
+  <!-- AGREGAR GASTO -->
+  <div class="modal-backdrop" id="gasto-modal-backdrop">
+    <div class="modal">
+      <button class="close-x" id="gasto-modal-close">✕</button>
+      <h3>Agregar gasto</h3>
+      <div class="field">
+        <label>Concepto</label>
+        <input type="text" id="gasto-concepto" placeholder="Ej. Gasolina, bolsas, puesto…">
+      </div>
+      <div class="field">
+        <label>Monto</label>
+        <input type="number" inputmode="decimal" id="gasto-monto" placeholder="0">
+      </div>
+      <div class="field">
+        <label>Categoría</label>
+        <select id="gasto-categoria">
+          <option value="Mercancía">Mercancía / inventario</option>
+          <option value="Transporte">Transporte / gasolina</option>
+          <option value="Puesto">Puesto / renta</option>
+          <option value="Insumos">Insumos (bolsas, ganchos, etc.)</option>
+          <option value="Comida">Comida</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Fecha</label>
+        <input type="date" id="gasto-fecha">
+      </div>
+      <button class="btn btn-vino btn-block" id="btn-save-gasto">Guardar gasto</button>
+    </div>
+  </div>
+
   <!-- CONTEO DE CAJA -->
   <div class="modal-backdrop" id="cash-count-modal-backdrop">
     <div class="modal">
@@ -1066,6 +1120,7 @@
         <div class="an-card"><span>Margen</span><b id="an-margin">0%</b></div>
       </div>
       <div class="an-warning" id="an-cost-warning" style="display:none;"></div>
+      <p class="an-hint" id="an-gastos-note" style="margin-top:-2px;"></p>
 
       <div class="an-section">
         <h4>Ventas por canal</h4>
@@ -1086,6 +1141,12 @@
         <h4>Más estancados</h4>
         <p class="an-hint">Mucho stock, poca o nula venta.</p>
         <div id="an-stagnant"></div>
+      </div>
+
+      <div class="an-section" id="an-historico-section">
+        <h4>Histórico del informe (28 ago – 13 sep)</h4>
+        <p class="an-hint">Registra en el calendario y en cortes de Tianguis los totales de esas 10 jornadas, repartidos entre Efectivo/Tarjeta/Transferencia según el informe. No modifica tu inventario.</p>
+        <button class="btn btn-outline-vino btn-sm btn-block" id="btn-import-historico">📥 Importar histórico de ventas</button>
       </div>
 
       <div class="an-section">
@@ -1177,6 +1238,7 @@
   var sales = [];
   var cortes = [];
   var traspasos = [];
+  var gastos = [];
   var cart = []; // {productId, name, price, qty, code}
   var selectedPayment = "Efectivo";
   var editingProductId = null;
@@ -1382,6 +1444,10 @@
       traspasos = t ? JSON.parse(t.value) : [];
     }catch(e){ traspasos = []; }
     try{
+      var g = await window.storage.get('gastos', true);
+      gastos = g ? JSON.parse(g.value) : [];
+    }catch(e){ gastos = []; }
+    try{
       var st = await window.storage.get('settings', false);
       settings = st ? JSON.parse(st.value) : {};
       if(settings.location === 'tianguis' || settings.location === 'local'){
@@ -1438,6 +1504,13 @@
       var r = await window.storage.set('traspasos', JSON.stringify(traspasos), true);
       if(!r) toast("No se pudo guardar el traspaso");
     }catch(e){ toast("Error guardando el traspaso"); }
+  }
+
+  async function saveGastos(){
+    try{
+      var r = await window.storage.set('gastos', JSON.stringify(gastos), true);
+      if(!r) toast("No se pudo guardar el gasto");
+    }catch(e){ toast("Error guardando el gasto"); }
   }
 
   async function saveSettings(){
@@ -2617,7 +2690,78 @@
     }
 
     renderCalendar();
+    renderGastos();
   }
+
+  // ---------- GASTOS ----------
+  function renderGastos(){
+    var label = document.getElementById('gastos-loc-label');
+    if(label) label.textContent = LOCATIONS[currentLocation];
+
+    var forLoc = gastos.filter(function(g){ return g.location === currentLocation; })
+      .sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+
+    var total = forLoc.reduce(function(a,g){ return a + g.amount; }, 0);
+    document.getElementById('gastos-total').textContent = money(total);
+
+    var listEl = document.getElementById('gastos-list');
+    if(forLoc.length === 0){
+      listEl.innerHTML = '<div class="empty" style="padding:14px 4px;"><small>Sin gastos registrados en ' + LOCATIONS[currentLocation] + '.</small></div>';
+      return;
+    }
+    listEl.innerHTML = forLoc.map(function(g){
+      var d = new Date(g.timestamp);
+      var dateStr = d.toLocaleDateString('es-MX', {day:'numeric', month:'short', year:'numeric'});
+      var delBtn = isAdminUnlocked ? '<button class="g-del" data-id="' + g.id + '">Eliminar</button>' : '';
+      return '<div class="gasto-row"><div class="g-info"><b>' + escapeHtml(g.concept) + '</b>' +
+        '<span>' + dateStr + ' · ' + escapeHtml(g.category) + '</span></div>' +
+        '<div style="display:flex;align-items:center;"><span class="g-amount">-' + money(g.amount) + '</span>' + delBtn + '</div></div>';
+    }).join('');
+
+    listEl.querySelectorAll('.g-del').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        if(!confirm('¿Eliminar este gasto?')) return;
+        gastos = gastos.filter(function(g){ return g.id !== btn.dataset.id; });
+        await saveGastos();
+        renderGastos();
+      });
+    });
+  }
+
+  document.getElementById('btn-add-gasto').addEventListener('click', function(){
+    document.getElementById('gasto-concepto').value = "";
+    document.getElementById('gasto-monto').value = "";
+    document.getElementById('gasto-categoria').value = "Mercancía";
+    document.getElementById('gasto-fecha').value = new Date().toISOString().slice(0,10);
+    document.getElementById('gasto-modal-backdrop').classList.add('show');
+  });
+  document.getElementById('gasto-modal-close').addEventListener('click', function(){
+    document.getElementById('gasto-modal-backdrop').classList.remove('show');
+  });
+  document.getElementById('gasto-modal-backdrop').addEventListener('click', function(e){
+    if(e.target === this) this.classList.remove('show');
+  });
+  document.getElementById('btn-save-gasto').addEventListener('click', async function(){
+    var concept = document.getElementById('gasto-concepto').value.trim();
+    var amount = Number(document.getElementById('gasto-monto').value) || 0;
+    var category = document.getElementById('gasto-categoria').value;
+    var fecha = document.getElementById('gasto-fecha').value;
+    if(!concept || amount <= 0){ toast("Escribe un concepto y un monto mayor a 0"); return; }
+
+    var timestamp = fecha ? new Date(fecha + 'T12:00:00').toISOString() : new Date().toISOString();
+    gastos.unshift({
+      id: uid(),
+      timestamp: timestamp,
+      concept: concept,
+      amount: amount,
+      category: category,
+      location: currentLocation
+    });
+    await saveGastos();
+    document.getElementById('gasto-modal-backdrop').classList.remove('show');
+    renderGastos();
+    toast("Gasto guardado");
+  });
 
   document.getElementById('btn-cerrar-corte').addEventListener('click', async function(){
     var open = salesSinceLastCorte();
@@ -2755,6 +2899,14 @@
       }
     });
 
+    var gastosByDay = {};
+    gastos.filter(function(g){ return g.location === currentLocation; }).forEach(function(g){
+      var d = new Date(g.timestamp);
+      if(d.getFullYear() === year && d.getMonth() === month){
+        gastosByDay[d.getDate()] = (gastosByDay[d.getDate()] || 0) + g.amount;
+      }
+    });
+
     var todayStr = new Date().toDateString();
     var weekdayHeaders = ['L','M','M','J','V','S','D'];
     var html = weekdayHeaders.map(function(w){ return '<div class="cal-wd">' + w + '</div>'; }).join('');
@@ -2765,9 +2917,11 @@
       var isToday = cellDate.toDateString() === todayStr;
       var isSelected = selectedCalDay && cellDate.toDateString() === selectedCalDay.toDateString();
       var amt = totalsByDay[day];
+      var gAmt = gastosByDay[day];
       html += '<div class="cal-cell' + (isToday ? ' today' : '') + (isSelected ? ' selected' : '') + (amt ? ' has-sales' : '') + '" data-day="' + day + '">' +
         '<span class="cal-daynum">' + day + '</span>' +
         (amt ? '<span class="cal-amt">' + money(amt) + '</span>' : '') +
+        (gAmt ? '<span class="cal-gasto">-' + money(gAmt) + '</span>' : '') +
         '</div>';
     }
     document.getElementById('cal-grid').innerHTML = html;
@@ -3032,6 +3186,7 @@
     sales.filter(function(s){ return s.status !== 'cancelled'; }).forEach(function(s){
       if(s.location === 'tianguis') tianguisRevenue += s.total;
       else localRevenue += s.total;
+      if(s.historical) return; // los registros históricos solo cuentan en el total, no en el detalle por producto
       s.items.forEach(function(it){
         var p = products.find(function(x){ return x.id === it.productId; });
         var code = p ? p.code : it.name;
@@ -3058,12 +3213,19 @@
     }catch(e){}
 
     var totalRevenue = tianguisRevenue + localRevenue + onlineRevenue;
-    var profit = totalRevenue - cogsKnown;
+    var totalGastos = gastos.reduce(function(a,g){ return a + g.amount; }, 0);
+    var profit = totalRevenue - cogsKnown - totalGastos;
     var margin = totalRevenue > 0 ? (profit / totalRevenue * 100) : 0;
 
     document.getElementById('an-total-revenue').textContent = money(totalRevenue);
     document.getElementById('an-total-profit').textContent = money(profit);
     document.getElementById('an-margin').textContent = margin.toFixed(1) + '%';
+    var historicalRevenue = sales.filter(function(s){ return s.historical && s.status !== 'cancelled'; })
+      .reduce(function(a,s){ return a + s.total; }, 0);
+    var gastosNote = [];
+    if(totalGastos > 0) gastosNote.push('La ganancia ya descuenta ' + money(totalGastos) + ' en gastos registrados.');
+    if(historicalRevenue > 0) gastosNote.push('Incluye ' + money(historicalRevenue) + ' de ventas históricas importadas, sin costo por producto — su ganancia real ya la calculaste en tu informe aparte.');
+    document.getElementById('an-gastos-note').textContent = gastosNote.join(' ');
 
     var warnEl = document.getElementById('an-cost-warning');
     if(cogsMissing){
@@ -3121,7 +3283,93 @@
         }).join('');
 
     loadDocList();
+    updateHistoricoButton();
   }
+
+  // ---------- HISTÓRICO DEL INFORME (28 ago - 13 sep, Tianguis) ----------
+  var TIANGUIS_HISTORICO = [
+    { date: '2026-08-28', total: 10803 },
+    { date: '2026-08-29', total: 5989 },
+    { date: '2026-09-04', total: 5162 },
+    { date: '2026-09-05', total: 5981 },
+    { date: '2026-09-06', total: 5683 },
+    { date: '2026-09-08', total: 3921 },
+    { date: '2026-09-10', total: 1647 },
+    { date: '2026-09-11', total: 5436 },
+    { date: '2026-09-12', total: 6384 },
+    { date: '2026-09-13', total: 6382 }
+  ];
+  var HISTORICO_PCT = { Efectivo: 0.919, Tarjeta: 0.046, Transferencia: 0.036 };
+
+  function updateHistoricoButton(){
+    var btn = document.getElementById('btn-import-historico');
+    if(!btn) return;
+    if(adminSettings.historicoTianguisImportado){
+      btn.textContent = "Ya importado ✓";
+      btn.disabled = true;
+    }else{
+      btn.textContent = "📥 Importar histórico de ventas";
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('btn-import-historico').addEventListener('click', async function(){
+    if(adminSettings.historicoTianguisImportado) return;
+    if(!confirm('Esto va a agregar 10 días de ventas históricas a Tianguis (28 ago – 13 sep 2026), sin tocar tu inventario. ¿Continuar?')) return;
+
+    var pctSum = HISTORICO_PCT.Efectivo + HISTORICO_PCT.Tarjeta + HISTORICO_PCT.Transferencia;
+
+    TIANGUIS_HISTORICO.forEach(function(day){
+      var dayTotal = day.total;
+      var efectivo = Math.round(dayTotal * (HISTORICO_PCT.Efectivo / pctSum));
+      var tarjeta = Math.round(dayTotal * (HISTORICO_PCT.Tarjeta / pctSum));
+      var transferencia = dayTotal - efectivo - tarjeta; // ajusta el redondeo aquí
+
+      var timestamp = new Date(day.date + 'T18:00:00').toISOString();
+      var breakdown = { Efectivo: efectivo, Tarjeta: tarjeta, Transferencia: transferencia };
+      var daySales = [];
+
+      Object.keys(breakdown).forEach(function(method){
+        if(breakdown[method] <= 0) return;
+        var sale = {
+          id: uid(),
+          timestamp: timestamp,
+          items: [{ productId: null, name: 'Ventas del tianguis (histórico, informe 28 ago–13 sep)', price: breakdown[method], qty: 1 }],
+          total: breakdown[method],
+          paymentMethod: method,
+          location: 'tianguis',
+          status: 'completed',
+          historical: true
+        };
+        sales.push(sale);
+        daySales.push(sale);
+      });
+
+      cortes.push({
+        id: uid(),
+        timestamp: timestamp,
+        periodStart: null,
+        location: 'tianguis',
+        totals: breakdown,
+        total: dayTotal,
+        count: daySales.length,
+        cashCount: null,
+        historical: true
+      });
+    });
+
+    cortes.sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+
+    await saveSales();
+    await saveCortes();
+    adminSettings.historicoTianguisImportado = true;
+    await saveAdminSettings();
+
+    updateHistoricoButton();
+    if(currentLocation === 'tianguis') renderCaja();
+    toast("Histórico importado: 10 jornadas agregadas a Tianguis");
+    openAnalysisModal();
+  });
 
   // ---------- CSV de costos ----------
   document.getElementById('btn-import-costs').addEventListener('click', function(){
