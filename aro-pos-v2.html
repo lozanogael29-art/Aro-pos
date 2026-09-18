@@ -1425,39 +1425,44 @@
     };
   }
 
+  // ---------- app_state: reemplazo de window.storage usando Supabase real ----------
+  // (window.storage solo funciona dentro de las vistas previas de Claude, no en un sitio publicado)
+  async function appStateGet(key, fallback){
+    try{
+      var res = await supabase.from('app_state').select('value').eq('key', key).maybeSingle();
+      if(res.error || !res.data) return fallback;
+      return res.data.value;
+    }catch(e){ return fallback; }
+  }
+  async function appStateSet(key, value){
+    try{
+      var res = await supabase.from('app_state').upsert({ key: key, value: value, updated_at: new Date().toISOString() });
+      return !res.error;
+    }catch(e){ return false; }
+  }
+
   async function loadData(){
     try{
       var res = await supabase.from('products').select('*');
       if(res.error){ toast("No se pudo cargar el inventario de Supabase"); products = []; }
       else{ products = res.data.map(rowToProduct); }
     }catch(e){ toast("No se pudo conectar con Supabase"); products = []; }
+
+    sales = await appStateGet('sales', []);
+    cortes = await appStateGet('cortes', []);
+    traspasos = await appStateGet('traspasos', []);
+    gastos = await appStateGet('gastos', []);
+    adminSettings = await appStateGet('admin_settings', {});
+
+    // 'settings' es por dispositivo (última ubicación, último correo) — se queda en este navegador, no en Supabase.
     try{
-      var s = await window.storage.get('sales', true);
-      sales = s ? JSON.parse(s.value) : [];
-    }catch(e){ sales = []; }
-    try{
-      var c = await window.storage.get('cortes', true);
-      cortes = c ? JSON.parse(c.value) : [];
-    }catch(e){ cortes = []; }
-    try{
-      var t = await window.storage.get('traspasos', true);
-      traspasos = t ? JSON.parse(t.value) : [];
-    }catch(e){ traspasos = []; }
-    try{
-      var g = await window.storage.get('gastos', true);
-      gastos = g ? JSON.parse(g.value) : [];
-    }catch(e){ gastos = []; }
-    try{
-      var st = await window.storage.get('settings', false);
-      settings = st ? JSON.parse(st.value) : {};
+      var localRaw = localStorage.getItem('aro_pos_settings');
+      settings = localRaw ? JSON.parse(localRaw) : {};
       if(settings.location === 'tianguis' || settings.location === 'local'){
         currentLocation = settings.location;
       }
     }catch(e){ settings = {}; }
-    try{
-      var ad = await window.storage.get('admin_settings', true);
-      adminSettings = ad ? JSON.parse(ad.value) : {};
-    }catch(e){ adminSettings = {}; }
+
     storageReady = true;
   }
 
@@ -1486,42 +1491,34 @@
   }
 
   async function saveSales(){
-    try{
-      var r = await window.storage.set('sales', JSON.stringify(sales), true);
-      if(!r) toast("No se pudo guardar la venta");
-    }catch(e){ toast("Error guardando la venta"); }
+    var ok = await appStateSet('sales', sales);
+    if(!ok) toast("No se pudo guardar la venta");
   }
 
   async function saveCortes(){
-    try{
-      var r = await window.storage.set('cortes', JSON.stringify(cortes), true);
-      if(!r) toast("No se pudo guardar el corte");
-    }catch(e){ toast("Error guardando el corte"); }
+    var ok = await appStateSet('cortes', cortes);
+    if(!ok) toast("No se pudo guardar el corte");
   }
 
   async function saveTraspasos(){
-    try{
-      var r = await window.storage.set('traspasos', JSON.stringify(traspasos), true);
-      if(!r) toast("No se pudo guardar el traspaso");
-    }catch(e){ toast("Error guardando el traspaso"); }
+    var ok = await appStateSet('traspasos', traspasos);
+    if(!ok) toast("No se pudo guardar el traspaso");
   }
 
   async function saveGastos(){
-    try{
-      var r = await window.storage.set('gastos', JSON.stringify(gastos), true);
-      if(!r) toast("No se pudo guardar el gasto");
-    }catch(e){ toast("Error guardando el gasto"); }
+    var ok = await appStateSet('gastos', gastos);
+    if(!ok) toast("No se pudo guardar el gasto");
   }
 
   async function saveSettings(){
     settings.location = currentLocation;
-    try{ await window.storage.set('settings', JSON.stringify(settings), false); }
+    try{ localStorage.setItem('aro_pos_settings', JSON.stringify(settings)); }
     catch(e){ /* no crítico */ }
   }
 
   async function saveAdminSettings(){
-    try{ await window.storage.set('admin_settings', JSON.stringify(adminSettings), true); }
-    catch(e){ toast("No se pudo guardar el PIN"); }
+    var ok = await appStateSet('admin_settings', adminSettings);
+    if(!ok) toast("No se pudo guardar el PIN");
   }
 
   // ---------- SELECTOR DE UBICACIÓN ----------
