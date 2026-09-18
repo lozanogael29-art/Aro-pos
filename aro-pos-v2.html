@@ -1430,15 +1430,29 @@
   async function appStateGet(key, fallback){
     try{
       var res = await supabase.from('app_state').select('value').eq('key', key).maybeSingle();
-      if(res.error || !res.data) return fallback;
+      if(res.error){
+        toast("Error leyendo '" + key + "': " + res.error.message);
+        return fallback;
+      }
+      if(!res.data) return fallback;
       return res.data.value;
-    }catch(e){ return fallback; }
+    }catch(e){
+      toast("Error de conexión leyendo '" + key + "': " + (e && e.message ? e.message : e));
+      return fallback;
+    }
   }
   async function appStateSet(key, value){
     try{
-      var res = await supabase.from('app_state').upsert({ key: key, value: value, updated_at: new Date().toISOString() });
-      return !res.error;
-    }catch(e){ return false; }
+      var res = await supabase.from('app_state').upsert({ key: key, value: value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      if(res.error){
+        toast("Error guardando '" + key + "': " + res.error.message);
+        return false;
+      }
+      return true;
+    }catch(e){
+      toast("Error de conexión guardando '" + key + "': " + (e && e.message ? e.message : e));
+      return false;
+    }
   }
 
   async function loadData(){
