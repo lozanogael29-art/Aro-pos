@@ -918,7 +918,7 @@
       <div class="hist-head-row">
         <div>
           <h2 class="title">Historial</h2>
-          <p class="subtitle">Tus ventas registradas.</p>
+          <p class="subtitle" id="historial-subtitle">Tus ventas registradas.</p>
         </div>
         <button class="admin-btn" id="btn-admin-toggle">🔒 Admin</button>
         <button class="admin-btn" id="btn-analysis" style="margin-left:8px;">📊 Análisis</button>
@@ -1646,13 +1646,26 @@
       if(activeScreen === 'screen-inventario') renderInventory();
       if(activeScreen === 'screen-vender') renderSaleList();
       if(activeScreen === 'screen-caja') renderCaja();
+      if(activeScreen === 'screen-historial') renderHistory();
       toast("Trabajando en " + LOCATIONS[currentLocation]);
     });
   });
 
   // ---------- NAV ----------
+  function openHistorialTab(){
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.screen === 'historial'); });
+    document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+    document.getElementById('screen-historial').classList.add('active');
+    renderHistory();
+  }
+
   document.querySelectorAll('.tab-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
+      if(btn.dataset.screen === 'historial' && !isAdminUnlocked){
+        pendingHistorialOpen = true;
+        openAdminPinModal(adminSettings.adminPin ? 'unlock' : 'create');
+        return;
+      }
       document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
       document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
       btn.classList.add('active');
@@ -2477,13 +2490,16 @@
 
   // ================= HISTORIAL =================
   function visibleSales(){
-    return isRestrictedStaff ? sales.filter(function(s){ return s.location === restrictedLocation; }) : sales;
+    var loc = isRestrictedStaff ? restrictedLocation : currentLocation;
+    return sales.filter(function(s){ return s.location === loc; });
   }
 
   function renderHistory(){
     var strip = document.getElementById('summary-strip');
     var list = document.getElementById('hist-list');
     var mySales = visibleSales();
+    var locLabel = isRestrictedStaff ? LOCATIONS[restrictedLocation] : LOCATIONS[currentLocation];
+    document.getElementById('historial-subtitle').textContent = "Tus ventas registradas — " + locLabel + ".";
 
     if(mySales.length === 0){
       strip.innerHTML = "";
@@ -2603,6 +2619,12 @@
       isAdminUnlocked = false;
       updateAdminUI();
       toast("Modo administrador desactivado");
+      var activeScreen = document.querySelector('.screen.active');
+      if(activeScreen && activeScreen.id === 'screen-historial'){
+        document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.screen === 'vender'); });
+        document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+        document.getElementById('screen-vender').classList.add('active');
+      }
       return;
     }
     openAdminPinModal(adminSettings.adminPin ? 'unlock' : 'create');
@@ -2627,6 +2649,7 @@
       updateAdminUI();
       toast("PIN creado — modo administrador activado para todos");
       if(pendingAnalysisOpen){ pendingAnalysisOpen = false; openAnalysisModal(); }
+      if(pendingHistorialOpen){ pendingHistorialOpen = false; openHistorialTab(); }
     }else{
       if(val === adminSettings.adminPin){
         isAdminUnlocked = true;
@@ -2634,6 +2657,7 @@
         updateAdminUI();
         toast("Modo administrador activado");
         if(pendingAnalysisOpen){ pendingAnalysisOpen = false; openAnalysisModal(); }
+        if(pendingHistorialOpen){ pendingHistorialOpen = false; openHistorialTab(); }
       }else{
         toast("PIN incorrecto");
       }
@@ -3359,6 +3383,7 @@
 
   // ---------- ANÁLISIS DEL NEGOCIO ----------
   var pendingAnalysisOpen = false;
+  var pendingHistorialOpen = false;
 
   document.getElementById('btn-analysis').addEventListener('click', function(){
     if(!isAdminUnlocked){
