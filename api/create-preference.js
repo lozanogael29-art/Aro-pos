@@ -96,7 +96,7 @@ module.exports = async (req, res) => {
       currency_id: 'MXN',
     }));
     if (shipCost > 0) {
-      const shipLabel = shipMethod === 'leon' ? 'Envío dentro de León' : 'Envío nacional';
+      const shipLabel = shipMethod === 'leon' ? 'Entrega local en León' : 'Envío nacional';
       mpItems.push({
         title: shipLabel,
         quantity: 1,
@@ -116,9 +116,9 @@ module.exports = async (req, res) => {
         external_reference: order.id,
         notification_url: `${siteUrl}/api/webhook`,
         back_urls: {
-          success: `${siteUrl}/tienda.html?estado=exito`,
-          failure: `${siteUrl}/tienda.html?estado=fallo`,
-          pending: `${siteUrl}/tienda.html?estado=pendiente`,
+          success: `${siteUrl}/index.html?estado=exito`,
+          failure: `${siteUrl}/index.html?estado=fallo`,
+          pending: `${siteUrl}/index.html?estado=pendiente`,
         },
         auto_return: 'approved',
       }),
@@ -131,5 +131,14 @@ module.exports = async (req, res) => {
 
     await supabase.from('orders').update({ mp_preference_id: mpData.id }).eq('id', order.id);
 
-    var checkoutUrl = mpData.sandbox_init_point || mpData.init_point;
-    if(!checkoutUr
+    const checkoutUrl = mpData.sandbox_init_point || mpData.init_point;
+    if (!checkoutUrl) {
+      throw new Error('Mercado Pago no devolvió una URL de pago');
+    }
+
+    res.status(200).json({ checkoutUrl });
+  } catch (err) {
+    console.error('create-preference error:', err);
+    res.status(500).json({ error: (err && err.message) || 'Error interno al crear el pago' });
+  }
+};
