@@ -209,9 +209,9 @@
       </div>
 
       <h3 style="margin-top:8px;">Tus datos</h3>
-      <div class="field"><label>Nombre</label><input type="text" id="chk-name"></div>
-      <div class="field"><label>Correo</label><input type="email" id="chk-email" inputmode="email"></div>
-      <div class="field"><label>Teléfono</label><input type="tel" id="chk-phone" inputmode="tel"></div>
+      <div class="field"><label>Nombre</label><input type="text" id="chk-name" autocomplete="name"></div>
+      <div class="field"><label>Correo</label><input type="text" id="chk-email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
+      <div class="field"><label>Teléfono</label><input type="text" id="chk-phone" inputmode="tel" autocomplete="tel"></div>
 
       <div class="cart-total"><span>Total</span><span id="checkout-total-amount">$0</span></div>
       <div id="checkout-error" class="checkout-error"></div>
@@ -537,7 +537,7 @@
     var freeEligible = sub >= FREE_SHIP_THRESHOLD;
     var opts = [
       { key: 'pickup', label: 'Recoger en tienda', desc: 'Sin costo', price: 0 },
-      { key: 'leon', label: 'Envío dentro de León', desc: freeEligible ? 'Gratis en compras mayores a ' + money(FREE_SHIP_THRESHOLD) : '1-2 días hábiles', price: freeEligible ? 0 : SHIP_COSTS.leon },
+      { key: 'leon', label: 'Entrega local en León', desc: freeEligible ? 'Gratis en compras mayores a ' + money(FREE_SHIP_THRESHOLD) : 'Entrega en aprox. 90 min', price: freeEligible ? 0 : SHIP_COSTS.leon },
       { key: 'nacional', label: 'Envío nacional', desc: freeEligible ? 'Gratis en compras mayores a ' + money(FREE_SHIP_THRESHOLD) : '3-6 días hábiles', price: freeEligible ? 0 : SHIP_COSTS.nacional }
     ];
     var el = document.getElementById('shipping-options');
@@ -590,6 +590,7 @@
 
     if(!shippingMethod){ errEl.textContent = "Elige cómo quieres recibir tu pedido."; return; }
     if(!name || !email){ errEl.textContent = "Escribe al menos tu nombre y correo."; return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ errEl.textContent = "Escribe un correo válido."; return; }
 
     var address = null;
     if(shippingMethod !== 'pickup'){
