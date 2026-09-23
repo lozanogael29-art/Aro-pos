@@ -3650,17 +3650,21 @@
 
     var totalRevenue = tianguisRevenue + localRevenue + onlineRevenue;
     var totalGastos = gastos.reduce(function(a,g){ return a + g.amount; }, 0);
-    var profit = totalRevenue - cogsKnown - totalGastos;
-    var margin = totalRevenue > 0 ? (profit / totalRevenue * 100) : 0;
+    var historicalRevenue = sales.filter(function(s){ return s.historical && s.status !== 'cancelled'; })
+      .reduce(function(a,s){ return a + s.total; }, 0);
+    // La ganancia y el margen SOLO se calculan sobre ventas con costo real conocido —
+    // las ventas históricas importadas no tienen costo por producto y se excluyen aquí
+    // (si se incluyeran como si fueran 100% ganancia, inflarían el margen artificialmente).
+    var trackableRevenue = totalRevenue - historicalRevenue;
+    var profit = trackableRevenue - cogsKnown - totalGastos;
+    var margin = trackableRevenue > 0 ? (profit / trackableRevenue * 100) : 0;
 
     document.getElementById('an-total-revenue').textContent = money(totalRevenue);
     document.getElementById('an-total-profit').textContent = money(profit);
     document.getElementById('an-margin').textContent = margin.toFixed(1) + '%';
-    var historicalRevenue = sales.filter(function(s){ return s.historical && s.status !== 'cancelled'; })
-      .reduce(function(a,s){ return a + s.total; }, 0);
     var gastosNote = [];
     if(totalGastos > 0) gastosNote.push('La ganancia ya descuenta ' + money(totalGastos) + ' en gastos registrados.');
-    if(historicalRevenue > 0) gastosNote.push('Incluye ' + money(historicalRevenue) + ' de ventas históricas importadas, sin costo por producto — su ganancia real ya la calculaste en tu informe aparte.');
+    if(historicalRevenue > 0) gastosNote.push('Ganancia y margen solo cuentan tus ' + money(trackableRevenue) + ' en ventas con costo registrado — los ' + money(historicalRevenue) + ' de ventas históricas importadas no tienen costo por producto y no entran en este cálculo (su ganancia real ya la calculaste en tu informe aparte).');
     document.getElementById('an-gastos-note').textContent = gastosNote.join(' ');
 
     var warnEl = document.getElementById('an-cost-warning');
@@ -3865,8 +3869,9 @@
       });
     });
 
-    var profit = revenue - cogs;
-    var margin = revenue > 0 ? (profit / revenue * 100) : 0;
+    var trackableRevenue = revenue - historicalRevenue;
+    var profit = trackableRevenue - cogs;
+    var margin = trackableRevenue > 0 ? (profit / trackableRevenue * 100) : 0;
     var topByRevenue = Object.keys(byProductCode).map(function(k){ return byProductCode[k]; })
       .sort(function(a,b){ return b.revenue - a.revenue; });
 
