@@ -2578,27 +2578,30 @@
     return v;
   }
   document.getElementById('btn-export-inventory').addEventListener('click', function(){
-    var header = ['Codigo','Nombre','Color','Talla','Categoria','Precio','Costo','Stock Tianguis','Stock Local'];
+    var header = ['Codigo','Nombre','Color','Talla','Categoria','Precio','Costo','Stock Tianguis','Stock Local','Stock Total'];
     var lines = [header.join(',')];
     products.slice().sort(function(a,b){ return (a.code||"").localeCompare(b.code||""); }).forEach(function(p){
       normalizeStock(p);
+      var total = (Number(p.stock.tianguis) || 0) + (Number(p.stock.local) || 0);
       lines.push([
         toCsvField(p.code), toCsvField(p.name), toCsvField(p.color), toCsvField(p.talla),
         toCsvField(p.category), toCsvField(p.price), toCsvField(p.cost),
-        toCsvField(p.stock.tianguis), toCsvField(p.stock.local)
+        toCsvField(p.stock.tianguis), toCsvField(p.stock.local), toCsvField(total)
       ].join(','));
     });
     var csv = lines.join('\r\n');
-    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
     var today = new Date().toISOString().slice(0,10);
-    a.href = url;
-    a.download = 'inventario-aro-' + today + '.csv';
+    var filename = 'inventario-aro-' + today + '.csv';
+    // Usamos data: URI (en vez de Blob + createObjectURL) porque en Safari de iPhone
+    // los links con blob: a veces "descargan" un archivo vacío o roto.
+    var dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + csv);
+    var a = document.createElement('a');
+    a.href = dataUri;
+    a.download = filename;
+    a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
     toast("Inventario exportado — edítalo y vuelve a subirlo con \"⬆ Actualizar\" para aplicar los cambios");
   });
 
