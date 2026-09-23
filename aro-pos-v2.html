@@ -352,6 +352,15 @@
   .hist-sale-top b{font-size:14px;font-weight:600;}
   .hist-sale-top span{font-size:11px;color:var(--negro-soft);}
   .hist-items{font-size:12px;color:var(--negro-soft);margin-top:4px;}
+  .hist-sale{cursor:pointer;}
+
+  .sd-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--crudo-line);font-size:13.5px;}
+  .sd-row b{font-weight:600;}
+  .sd-row.total{font-size:16px;font-weight:700;color:var(--vino);border-bottom:none;padding-top:12px;}
+  .sd-section-title{font-size:12px;font-weight:700;color:var(--negro-soft);text-transform:uppercase;letter-spacing:.03em;margin:14px 0 6px;}
+  .sd-item{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--crudo-line);font-size:13.5px;}
+  .sd-item-name{flex:1;padding-right:10px;}
+  .sd-item-meta{color:var(--negro-soft);font-size:12px;}
   .hist-pay{
     display:inline-block;margin-top:6px;font-size:11px;font-weight:600;
     padding:3px 8px;border-radius:20px;background:var(--crudo-deep);color:var(--negro-soft);
@@ -866,6 +875,11 @@
       <div class="inv-toolbar">
         <button class="btn btn-outline-vino btn-sm btn-block" id="btn-bulk-photos">📷 Subir fotos por lote</button>
       </div>
+      <div class="inv-toolbar">
+        <button class="btn btn-outline-vino btn-sm btn-block" id="btn-export-inventory">📤 Exportar inventario (Tianguis y Local)</button>
+        <button class="btn btn-ghost btn-sm" id="btn-import-inventory" style="flex-shrink:0;">⬆ Actualizar</button>
+        <input type="file" accept=".csv,text/csv" id="file-inventory" style="display:none;">
+      </div>
 
       <div id="inv-list" class="inv-list"></div>
 
@@ -1186,6 +1200,12 @@
         <button class="btn btn-outline-vino btn-sm btn-block" id="btn-import-historico">📥 Importar histórico de ventas</button>
       </div>
 
+      <div class="an-section" id="an-historico-local-section">
+        <h4>Histórico de Local (3 – 21 sep)</h4>
+        <p class="an-hint">Registra las 34 ventas reales de tu hoja de Local (cada una con su producto, monto y forma de pago). No modifica tu inventario.</p>
+        <button class="btn btn-outline-vino btn-sm btn-block" id="btn-import-historico-local">📥 Importar histórico de Local</button>
+      </div>
+
       <div class="an-section">
         <h4>Costos por producto</h4>
         <p class="an-hint">Sube un CSV con columnas <b>codigo</b> y <b>costo</b> (puedes usar el código completo con talla, o solo el código base — y agregar una columna <b>color</b> — para aplicar el mismo costo a todas las tallas).</p>
@@ -1251,6 +1271,17 @@
       <div class="admin-pin-hint">Se abrirá tu app de correo con el ticket ya escrito — solo confirmas el envío.</div>
       <div class="modal-actions">
         <button class="btn btn-primary btn-block" id="btn-confirm-send-ticket">Abrir correo</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="sale-detail-modal-backdrop">
+    <div class="modal">
+      <button class="close-x" id="sale-detail-modal-close">✕</button>
+      <h3>Detalle de la venta</h3>
+      <div id="sale-detail-body" style="max-height:60vh;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline-vino btn-block" id="btn-sale-detail-ticket">✉️ Enviar ticket</button>
       </div>
     </div>
   </div>
@@ -1425,6 +1456,58 @@
   });
   document.getElementById('email-ticket-modal-backdrop').addEventListener('click', function(e){
     if(e.target === this) this.classList.remove('show');
+  });
+
+  // ---------- DETALLE DE VENTA ----------
+  var pendingDetailSale = null;
+  function openSaleDetailModal(s){
+    pendingDetailSale = s;
+    var d = new Date(s.timestamp);
+    var fecha = d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+    var hora = d.toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'});
+    var cancelled = s.status === 'cancelled';
+
+    var html = '';
+    html += '<div class="sd-row"><span>Fecha</span><b>' + escapeHtml(fecha.charAt(0).toUpperCase()+fecha.slice(1)) + ', ' + hora + '</b></div>';
+    html += '<div class="sd-row"><span>Ubicación</span><b>' + escapeHtml(LOCATIONS[s.location] || s.location || '—') + '</b></div>';
+    html += '<div class="sd-row"><span>Estado</span><b>' + (cancelled ? 'Cancelada' : 'Completada') + '</b></div>';
+
+    html += '<div class="sd-section-title">Productos</div>';
+    s.items.forEach(function(it){
+      html += '<div class="sd-item">' +
+        '<div class="sd-item-name">' + escapeHtml(it.qty + '× ' + it.name) +
+          (it.code ? '<div class="sd-item-meta">' + escapeHtml(it.code) + '</div>' : '') +
+        '</div>' +
+        '<div>' + money(it.price) + ' c/u</div>' +
+      '</div>';
+    });
+
+    html += '<div class="sd-section-title">Pago</div>';
+    if(s.discountPct){
+      html += '<div class="sd-row"><span>Subtotal</span><b>' + money(s.subtotal) + '</b></div>';
+      html += '<div class="sd-row"><span>Descuento (' + s.discountPct + '%)</span><b>-' + money(s.discountAmount) + '</b></div>';
+    }
+    html += '<div class="sd-row"><span>Método de pago</span><b>' + escapeHtml(paymentLabel(s)) + '</b></div>';
+    if(s.paymentMethod === 'Efectivo' && s.cashReceived != null){
+      html += '<div class="sd-row"><span>Pagó con</span><b>' + money(s.cashReceived) + '</b></div>';
+      html += '<div class="sd-row"><span>Cambio</span><b>' + money(s.cashChange) + '</b></div>';
+    }
+    html += '<div class="sd-row total"><span>Total</span><b>' + money(s.total) + '</b></div>';
+
+    document.getElementById('sale-detail-body').innerHTML = html;
+    document.getElementById('btn-sale-detail-ticket').style.display = cancelled ? 'none' : 'block';
+    document.getElementById('sale-detail-modal-backdrop').classList.add('show');
+  }
+  document.getElementById('sale-detail-modal-close').addEventListener('click', function(){
+    document.getElementById('sale-detail-modal-backdrop').classList.remove('show');
+  });
+  document.getElementById('sale-detail-modal-backdrop').addEventListener('click', function(e){
+    if(e.target === this) this.classList.remove('show');
+  });
+  document.getElementById('btn-sale-detail-ticket').addEventListener('click', function(){
+    if(!pendingDetailSale) return;
+    document.getElementById('sale-detail-modal-backdrop').classList.remove('show');
+    openEmailTicketModal(pendingDetailSale);
   });
 
   document.getElementById('btn-confirm-send-ticket').addEventListener('click', async function(){
@@ -2009,7 +2092,7 @@
     btn.disabled = true;
     btn.textContent = "Cobrando…";
 
-    var saleItems = cart.map(function(c){ return {productId: c.productId, name: c.name, price: c.price, qty: c.qty}; });
+    var saleItems = cart.map(function(c){ return {productId: c.productId, name: c.name, price: c.price, qty: c.qty, code: c.code}; });
 
     var affectedProducts = [];
     cart.forEach(function(c){
@@ -2488,6 +2571,85 @@
     reader.readAsText(file);
   });
 
+  // ================= EXPORTAR / ACTUALIZAR INVENTARIO POR ARCHIVO =================
+  function toCsvField(v){
+    v = (v === null || v === undefined) ? "" : String(v);
+    if(/[",\n;]/.test(v)) return '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  }
+  document.getElementById('btn-export-inventory').addEventListener('click', function(){
+    var header = ['Codigo','Nombre','Color','Talla','Categoria','Precio','Costo','Stock Tianguis','Stock Local'];
+    var lines = [header.join(',')];
+    products.slice().sort(function(a,b){ return (a.code||"").localeCompare(b.code||""); }).forEach(function(p){
+      normalizeStock(p);
+      lines.push([
+        toCsvField(p.code), toCsvField(p.name), toCsvField(p.color), toCsvField(p.talla),
+        toCsvField(p.category), toCsvField(p.price), toCsvField(p.cost),
+        toCsvField(p.stock.tianguis), toCsvField(p.stock.local)
+      ].join(','));
+    });
+    var csv = lines.join('\r\n');
+    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var today = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = 'inventario-aro-' + today + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+    toast("Inventario exportado — edítalo y vuelve a subirlo con \"⬆ Actualizar\" para aplicar los cambios");
+  });
+
+  document.getElementById('btn-import-inventory').addEventListener('click', function(){
+    document.getElementById('file-inventory').click();
+  });
+  document.getElementById('file-inventory').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = async function(ev){
+      var rows;
+      try{ rows = parseCSV(ev.target.result); }
+      catch(err){ toast("No se pudo leer el archivo"); return; }
+      if(rows.length === 0){ toast("El archivo está vacío o no tiene el formato esperado"); return; }
+
+      var updated = 0, notFound = 0;
+      rows.forEach(function(row){
+        var code = findField(row, ['codigo','código','code']);
+        if(!code) return;
+        var p = products.find(function(x){ return x.code === code; });
+        if(!p){ notFound++; return; }
+        var name = findField(row, ['nombre','name']);
+        var color = findField(row, ['color']);
+        var talla = findField(row, ['talla','size']);
+        var category = findField(row, ['categoria','categoría','category']);
+        var priceRaw = findField(row, ['precio','price']);
+        var costRaw = findField(row, ['costo','cost']);
+        var stockTianguisRaw = findField(row, ['stock tianguis','tianguis']);
+        var stockLocalRaw = findField(row, ['stock local','local']);
+
+        if(name) p.name = name;
+        if(color) p.color = color;
+        if(talla) p.talla = talla;
+        if(category) p.category = category;
+        if(priceRaw !== "") p.price = parseLocaleNumber(priceRaw);
+        if(costRaw !== "") p.cost = parseLocaleNumber(costRaw);
+        if(stockTianguisRaw !== "") setStock(p, 'tianguis', parseLocaleNumber(stockTianguisRaw));
+        if(stockLocalRaw !== "") setStock(p, 'local', parseLocaleNumber(stockLocalRaw));
+        updated++;
+      });
+
+      await saveProducts();
+      renderInventory();
+      updateHeaderSub();
+      toast("Inventario actualizado: " + updated + " producto(s)" + (notFound ? " · " + notFound + " no encontrados" : ""));
+    };
+    reader.readAsText(file);
+  });
+
   // ================= HISTORIAL =================
   function visibleSales(){
     var loc = isRestrictedStaff ? restrictedLocation : currentLocation;
@@ -2538,7 +2700,7 @@
         var t = new Date(s.timestamp).toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'});
         var itemsTxt = s.items.map(function(i){ return i.qty + '× ' + i.name; }).join(', ');
         var cancelled = s.status === 'cancelled';
-        return '<div class="hist-sale' + (cancelled ? ' cancelled' : '') + '">' +
+        return '<div class="hist-sale' + (cancelled ? ' cancelled' : '') + '" data-id="' + s.id + '">' +
           '<div class="hist-sale-top"><b>' + money(s.total) + '</b><span>' + t + '</span></div>' +
           '<div class="hist-items">' + escapeHtml(itemsTxt) + '</div>' +
           (cancelled ? '<span class="hist-pay cancel-tag">cancelada</span>' : '<span class="hist-pay">' + paymentLabel(s) + '</span>') +
@@ -2554,6 +2716,14 @@
         rows +
         '</div>';
     }).join('');
+
+    list.querySelectorAll('.hist-sale').forEach(function(el){
+      el.addEventListener('click', function(e){
+        if(e.target.closest('button')) return;
+        var s = sales.find(function(x){ return x.id === el.dataset.id; });
+        if(s) openSaleDetailModal(s);
+      });
+    });
 
     list.querySelectorAll('.btn-email-ticket').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -3594,15 +3764,62 @@
   ];
   var HISTORICO_PCT = { Efectivo: 0.919, Tarjeta: 0.046, Transferencia: 0.036 };
 
+  var LOCAL_HISTORICO = [
+    { date: '2026-09-12', code: 'P13239', name: 'Short faux suede wrap — Negro Ch', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-19', code: 'P13266', name: 'Short plaid wrap — Negro/olivo M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-13', code: 'P14115', name: 'Body manga larga cuello U — Taupe Ch', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-19', code: 'P14115', name: 'Body manga larga cuello U — Blanco hueso M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-08', code: 'P14710', name: 'Pantalon tejido cintura elastica — Negro M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-13', code: 'P14710', name: 'Pantalon tejido cintura elastica — Beige claro M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-04', code: 'T14506', name: 'Top deportivo drapeado lateral — Blanco hueso Ch', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-07', code: 'T14506', name: 'Top deportivo drapeado lateral — Blanco hueso L', qty: 1, amount: 200.0, method: 'Efectivo' },
+    { date: '2026-09-08', code: 'T14709', name: 'Top tejido cuello tortuga — Negro Ch', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-13', code: 'T15026', name: 'Top manga cap drapeado — Negro L', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-04', code: 'T15400', name: 'Top faux leather asimetrico — Burdeos oscuro L', qty: 1, amount: 299.0, method: 'Tarjeta' },
+    { date: '2026-09-05', code: 'T15400', name: 'Top faux leather asimetrico — Burdeos oscuro L', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-05', code: 'T15411', name: 'Top faux leather pliegues laterales — Verde oscuro M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-05', code: 'WL006 LT', name: 'Pantalon carpintero lavado claro — — 3', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-07', code: 'WL006 MED', name: 'Pantalon carpintero lavado medio — — 11', qty: 2, amount: 600.0, method: 'Efectivo' },
+    { date: '2026-09-04', code: 'VERA-54BS', name: 'Body contour boatneck manga larga — Burdeos Ch', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-04', code: 'VERA-54BS', name: 'Body contour boatneck manga larga — Espresso Ch', qty: 1, amount: 299.0, method: 'Tarjeta' },
+    { date: '2026-09-15', code: 'VERA-54BS', name: 'Body contour boatneck manga larga — Espresso Ch', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-15', code: 'VERA-54BS', name: 'Body contour boatneck manga larga — Blanco L', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-05', code: 'NOVA-05', name: 'Top halter cuello cowl — Negro M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-12', code: 'VERA-52BS', name: 'Body contour cuello scoop — Espresso Ch', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-12', code: 'VERA-09BS', name: 'Body contour doble capa tank — Blanco M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-04', code: 'VERA-09BS', name: 'Body contour doble capa tank — Blanco L', qty: 1, amount: 299.0, method: 'Tarjeta' },
+    { date: '2026-09-18', code: 'BODY-100', name: 'Body shapewear — Espresso L', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-06', code: 'SCU506', name: 'Short scuba con cinturon — Khaki Ch', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-19', code: 'JACKSON-05', name: 'Mini falda/skort faux leather — Negro M', qty: 1, amount: 299.0, method: 'Efectivo' },
+    { date: '2026-09-03', code: 'B5SX1004-T', name: 'Producto — Light Mocha M', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-06', code: 'B5SX1004-T', name: 'Producto — Light Mocha M', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-06', code: 'TB8571', name: 'Producto — Medium Blue L', qty: 1, amount: 250.0, method: 'Tarjeta' },
+    { date: '2026-09-15', code: 'TW1186', name: 'Producto — Coffee Bean M', qty: 1, amount: 199.0, method: 'Efectivo' },
+    { date: '2026-09-12', code: 'TW1728-T3', name: 'Producto — White L', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-04', code: 'TW1764', name: 'Producto — Cream Ch', qty: 1, amount: 250.0, method: 'Efectivo' },
+    { date: '2026-09-03', code: null, name: 'Venta (folio no registrado, con descuento)', qty: 1, amount: 290, method: 'Efectivo' }
+  ];
+
   function updateHistoricoButton(){
     var btn = document.getElementById('btn-import-historico');
-    if(!btn) return;
-    if(adminSettings.historicoTianguisImportado){
-      btn.textContent = "Ya importado ✓";
-      btn.disabled = true;
-    }else{
-      btn.textContent = "📥 Importar histórico de ventas";
-      btn.disabled = false;
+    if(btn){
+      if(adminSettings.historicoTianguisImportado){
+        btn.textContent = "Ya importado ✓";
+        btn.disabled = true;
+      }else{
+        btn.textContent = "📥 Importar histórico de ventas";
+        btn.disabled = false;
+      }
+    }
+    var btnLocal = document.getElementById('btn-import-historico-local');
+    if(btnLocal){
+      if(adminSettings.historicoLocalImportado){
+        btnLocal.textContent = "Ya importado ✓";
+        btnLocal.disabled = true;
+      }else{
+        btnLocal.textContent = "📥 Importar histórico de Local";
+        btnLocal.disabled = false;
+      }
     }
   }
 
@@ -3661,6 +3878,66 @@
     updateHistoricoButton();
     if(currentLocation === 'tianguis') renderCaja();
     toast("Histórico importado: 10 jornadas agregadas a Tianguis");
+    openAnalysisModal();
+  });
+
+  document.getElementById('btn-import-historico-local').addEventListener('click', async function(){
+    if(adminSettings.historicoLocalImportado) return;
+    if(!confirm('Esto va a agregar ' + LOCAL_HISTORICO.length + ' ventas reales a Local (3–21 sep 2026), sin tocar tu inventario. ¿Continuar?')) return;
+
+    var byDate = {};
+    var dateOrder = [];
+    LOCAL_HISTORICO.forEach(function(entry){
+      if(!byDate[entry.date]){ byDate[entry.date] = []; dateOrder.push(entry.date); }
+      byDate[entry.date].push(entry);
+    });
+
+    dateOrder.forEach(function(date){
+      var entries = byDate[date];
+      var timestamp = new Date(date + 'T18:00:00').toISOString();
+      var breakdown = {};
+      var daySales = [];
+
+      entries.forEach(function(entry){
+        var sale = {
+          id: uid(),
+          timestamp: timestamp,
+          items: [{ productId: null, name: entry.name + (entry.code ? ' (' + entry.code + ')' : ''), price: entry.amount, qty: entry.qty }],
+          total: entry.amount,
+          paymentMethod: entry.method,
+          location: 'local',
+          status: 'completed',
+          historical: true
+        };
+        sales.push(sale);
+        daySales.push(sale);
+        breakdown[entry.method] = (breakdown[entry.method] || 0) + entry.amount;
+      });
+
+      var dayTotal = daySales.reduce(function(a,s){ return a + s.total; }, 0);
+      cortes.push({
+        id: uid(),
+        timestamp: timestamp,
+        periodStart: null,
+        location: 'local',
+        totals: breakdown,
+        total: dayTotal,
+        count: daySales.length,
+        cashCount: null,
+        historical: true
+      });
+    });
+
+    cortes.sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+
+    await saveSales();
+    await saveCortes();
+    adminSettings.historicoLocalImportado = true;
+    await saveAdminSettings();
+
+    updateHistoricoButton();
+    if(currentLocation === 'local') renderCaja();
+    toast("Histórico importado: " + LOCAL_HISTORICO.length + " ventas agregadas a Local");
     openAnalysisModal();
   });
 
