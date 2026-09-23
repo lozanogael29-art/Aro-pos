@@ -4047,7 +4047,7 @@
 
       '<h2><span class="num">02</span>Productos más vendidos</h2>' +
       '<p class="section-note">Por ingresos generados.</p>' +
-      reportProductTable(stats.topByRevenue, 'revenue', 'Ingreso', 10) +
+      reportProductTable(stats.topByRevenue, 'revenue', 'Ingreso', 9999) +
 
       '<div class="two-col">' +
         '<div><h2 style="margin-top:24px;"><span class="num">03</span>Por talla</h2>' + reportTwoColTable(stats.byTalla, 'Talla') + '</div>' +
@@ -4064,7 +4064,7 @@
         '<div class="kpi"><div class="val" style="color:var(--good);">' + money(stats.profit) + '</div><div class="lbl">Ganancia neta del periodo</div></div>' +
       '</div>' +
       '<p class="section-note" style="margin-top:22px;">Productos que más ganancia en pesos te dejaron:</p>' +
-      reportProductTable(stats.topByRevenue.slice().sort(function(a,b){return b.profit-a.profit;}), 'profit', 'Ganancia', 5) +
+      reportProductTable(stats.topByRevenue.slice().sort(function(a,b){return b.profit-a.profit;}), 'profit', 'Ganancia', 9999) +
 
       (opts.mode === 'month' ? '<h2><span class="num">07</span>Desglose por semana</h2>' + weekSections : '') +
 
