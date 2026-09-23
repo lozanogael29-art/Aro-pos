@@ -1196,16 +1196,21 @@
 
       <div class="an-section" id="an-report-section">
         <h4>📄 Reporte de ventas detallado</h4>
-        <p class="an-hint">Genera un informe como los que hemos armado juntos — productos más vendidos, por talla, forma de pago y ganancia real — por semana (lunes a domingo) o por mes.</p>
+        <p class="an-hint">Genera un informe como los que hemos armado juntos — productos más vendidos, por talla, forma de pago y ganancia real — por semana (lunes a domingo), por mes, o eligiendo tú las fechas.</p>
         <div class="field-row">
           <div class="field" style="flex:0 0 100px;">
             <select id="report-mode">
               <option value="week">Semana</option>
               <option value="month">Mes</option>
+              <option value="custom">Rango de fechas</option>
             </select>
           </div>
           <div class="field" id="report-week-field"><input type="week" id="report-week-input"></div>
           <div class="field" id="report-month-field" style="display:none;"><input type="month" id="report-month-input"></div>
+        </div>
+        <div class="field-row" id="report-custom-field" style="display:none;">
+          <div class="field"><label style="font-size:11.5px;color:var(--negro-soft);">Del</label><input type="date" id="report-start-input"></div>
+          <div class="field"><label style="font-size:11.5px;color:var(--negro-soft);">Al</label><input type="date" id="report-end-input"></div>
         </div>
         <div class="field">
           <select id="report-location">
@@ -3777,9 +3782,10 @@
 
   // ================= REPORTE DE VENTAS (semanal / mensual) =================
   document.getElementById('report-mode').addEventListener('change', function(){
-    var isWeek = this.value === 'week';
-    document.getElementById('report-week-field').style.display = isWeek ? 'block' : 'none';
-    document.getElementById('report-month-field').style.display = isWeek ? 'none' : 'block';
+    var mode = this.value;
+    document.getElementById('report-week-field').style.display = mode === 'week' ? 'block' : 'none';
+    document.getElementById('report-month-field').style.display = mode === 'month' ? 'block' : 'none';
+    document.getElementById('report-custom-field').style.display = mode === 'custom' ? 'flex' : 'none';
   });
 
   function pad2(n){ return (n < 10 ? '0' : '') + n; }
@@ -3796,6 +3802,9 @@
     var now = new Date();
     document.getElementById('report-week-input').value = isoWeekValue(now);
     document.getElementById('report-month-input').value = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+    var monthAgo = new Date(now); monthAgo.setDate(monthAgo.getDate() - 30);
+    document.getElementById('report-start-input').value = monthAgo.getFullYear() + '-' + pad2(monthAgo.getMonth()+1) + '-' + pad2(monthAgo.getDate());
+    document.getElementById('report-end-input').value = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate());
   })();
 
   function isoWeekToMonday(weekStr){
@@ -3951,7 +3960,7 @@
         if(dayRevenue > maxDay) maxDay = dayRevenue;
       }
       dailyBarsHtml = dayTotals.map(function(d){ return reportBarRow(d.label, d.value, maxDay, true); }).join('');
-    }else{
+    }else if(opts.mode === 'month'){
       eyebrow = 'ARO / ' + opts.locationLabel + ' · ' + MONTH_LABELS[opts.start.getMonth()].charAt(0).toUpperCase() + MONTH_LABELS[opts.start.getMonth()].slice(1) + ' ' + opts.start.getFullYear();
       title = 'Reporte mensual de ventas';
       // Semanas (lunes a domingo) dentro del mes
@@ -3978,6 +3987,30 @@
           '<p class="section-note">' + money(st.revenue) + ' en ' + st.saleCount + ' venta(s), ' + st.pieces + ' prenda(s).</p>' +
           reportProductTable(st.topByRevenue, 'revenue', 'Ingreso', 5);
       }).join('');
+    }else{
+      // Rango de fechas personalizado: una barra por jornada (día con al menos una venta), como en un informe de jornadas.
+      eyebrow = 'ARO / ' + opts.locationLabel + ' · ' + fmtDayShort(opts.start) + ' – ' + fmtDayShort(subEnd) + ' de ' + subEnd.getFullYear();
+      title = 'Reporte de ventas por rango de fechas';
+      var dayMap = {};
+      var dayOrder = [];
+      periodSales.forEach(function(s){
+        var t = new Date(s.timestamp);
+        var key = t.getFullYear() + '-' + pad2(t.getMonth()+1) + '-' + pad2(t.getDate());
+        if(!dayMap[key]){ dayMap[key] = { date: new Date(t.getFullYear(), t.getMonth(), t.getDate()), total: 0 }; dayOrder.push(key); }
+        dayMap[key].total += s.total;
+      });
+      dayOrder.sort(function(a,b){ return dayMap[a].date - dayMap[b].date; });
+      var maxCustomDay = 0.0001;
+      dayOrder.forEach(function(k){ if(dayMap[k].total > maxCustomDay) maxCustomDay = dayMap[k].total; });
+      if(dayOrder.length === 0){
+        dailyBarsHtml = '<p class="section-note">No hubo ventas en este rango de fechas.</p>';
+      }else{
+        dailyBarsHtml = dayOrder.map(function(k){
+          var d = dayMap[k];
+          var label = DOW_LABELS[(d.date.getDay() + 6) % 7] + ' ' + fmtDayShort(d.date);
+          return reportBarRow(label, d.total, maxCustomDay, true);
+        }).join('');
+      }
     }
 
     var paymentEntries = Object.keys(stats.byPayment).map(function(k){ return [k, stats.byPayment[k]]; }).sort(function(a,b){return b[1]-a[1];});
@@ -4003,7 +4036,7 @@
         '<div class="kpi"><div class="val">' + stats.margin.toFixed(1) + '%</div><div class="lbl">Margen promedio</div></div>' +
       '</div>' +
 
-      '<h2><span class="num">01</span>' + (opts.mode === 'week' ? 'Ventas por día' : 'Ventas por semana') + '</h2>' +
+      '<h2><span class="num">01</span>' + (opts.mode === 'week' ? 'Ventas por día' : (opts.mode === 'month' ? 'Ventas por semana' : 'Ventas por jornada')) + '</h2>' +
       dailyBarsHtml +
 
       '<h2><span class="num">02</span>Productos más vendidos</h2>' +
@@ -4046,13 +4079,21 @@
       if(!weekVal){ toast("Elige una semana"); return; }
       opts.start = isoWeekToMonday(weekVal);
       opts.end = new Date(opts.start); opts.end.setDate(opts.end.getDate()+6); opts.end.setHours(23,59,59,999);
-    }else{
+    }else if(mode === 'month'){
       var monthVal = document.getElementById('report-month-input').value;
       if(!monthVal){ toast("Elige un mes"); return; }
       var mparts = monthVal.split('-');
       var y = Number(mparts[0]), m = Number(mparts[1]);
       opts.start = new Date(y, m-1, 1, 0,0,0,0);
       opts.end = new Date(y, m, 0, 23,59,59,999);
+    }else{
+      var startVal = document.getElementById('report-start-input').value;
+      var endVal = document.getElementById('report-end-input').value;
+      if(!startVal || !endVal){ toast("Elige la fecha de inicio y de fin"); return; }
+      var sp = startVal.split('-'), ep = endVal.split('-');
+      opts.start = new Date(Number(sp[0]), Number(sp[1])-1, Number(sp[2]), 0,0,0,0);
+      opts.end = new Date(Number(ep[0]), Number(ep[1])-1, Number(ep[2]), 23,59,59,999);
+      if(opts.start > opts.end){ toast("La fecha de inicio es posterior a la de fin"); return; }
     }
 
     var html = buildSalesReportHtml(opts);
