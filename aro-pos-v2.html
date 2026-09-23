@@ -4025,7 +4025,7 @@
       '</table>';
 
     var costNote = stats.cogsMissing ? '<p class="section-note">Algunos productos vendidos no tienen costo registrado — la ganancia mostrada solo cuenta lo que sí conoces (sube tu CSV de costos en Análisis para completarlo).</p>' : '';
-    var historicalNote = stats.historicalRevenue > 0 ? '<p class="section-note">Incluye ' + money(stats.historicalRevenue) + ' de ventas históricas importadas, sin producto ligado — no aparecen en las tablas de artículo/talla/color.</p>' : '';
+    var historicalNote = stats.historicalRevenue > 0 ? '<p class="section-note" style="margin-top:-14px;">De este periodo, ' + money(stats.historicalRevenue) + ' son ventas históricas importadas (sin producto, talla ni color ligado) — por eso <b>no suman</b> a "prendas vendidas" ni a las tablas de producto/talla/color/ganancia; solo entran al total de ingresos y forma de pago.</p>' : '';
     var discountNote = stats.discountTotal > 0 ? ' Se dieron ' + money(stats.discountTotal) + ' en descuentos sobre precio de lista.' : '';
 
     var html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
@@ -4034,6 +4034,7 @@
       '<p class="eyebrow">' + escapeHtml(eyebrow) + '</p>' +
       '<h1>' + title + '</h1>' +
       '<p class="subtitle">' + stats.saleCount + ' venta(s), ' + stats.pieces + ' prenda(s), ' + stats.topByRevenue.length + ' producto(s) distinto(s) en movimiento.' + discountNote + '</p>' +
+      historicalNote +
       '<div class="kpis">' +
         '<div class="kpi"><div class="val">' + money(stats.revenue) + '</div><div class="lbl">Ingresos totales (MXN)</div></div>' +
         '<div class="kpi"><div class="val" style="color:var(--good);">' + money(stats.profit) + '</div><div class="lbl">Ganancia real (después de costo)</div></div>' +
@@ -4057,7 +4058,7 @@
       paymentTableHtml +
 
       '<h2><span class="num">06</span>Ganancia real</h2>' +
-      '<p class="section-note">Cruzando cada venta con el costo por prenda de tu inventario.</p>' + costNote + historicalNote +
+      '<p class="section-note">Cruzando cada venta con el costo por prenda de tu inventario.</p>' + costNote +
       '<div class="kpis">' +
         '<div class="kpi"><div class="val">' + money(stats.cogs) + '</div><div class="lbl">Costo de la mercancía vendida</div></div>' +
         '<div class="kpi"><div class="val" style="color:var(--good);">' + money(stats.profit) + '</div><div class="lbl">Ganancia neta del periodo</div></div>' +
