@@ -1194,6 +1194,29 @@
         <div id="an-stagnant"></div>
       </div>
 
+      <div class="an-section" id="an-report-section">
+        <h4>📄 Reporte de ventas detallado</h4>
+        <p class="an-hint">Genera un informe como los que hemos armado juntos — productos más vendidos, por talla, forma de pago y ganancia real — por semana (lunes a domingo) o por mes.</p>
+        <div class="field-row">
+          <div class="field" style="flex:0 0 100px;">
+            <select id="report-mode">
+              <option value="week">Semana</option>
+              <option value="month">Mes</option>
+            </select>
+          </div>
+          <div class="field" id="report-week-field"><input type="week" id="report-week-input"></div>
+          <div class="field" id="report-month-field" style="display:none;"><input type="month" id="report-month-input"></div>
+        </div>
+        <div class="field">
+          <select id="report-location">
+            <option value="ambas">Tianguis + Local</option>
+            <option value="tianguis">Solo Tianguis</option>
+            <option value="local">Solo Local</option>
+          </select>
+        </div>
+        <button class="btn btn-vino btn-block" id="btn-generate-report">📄 Generar reporte</button>
+      </div>
+
       <div class="an-section" id="an-historico-section">
         <h4>Histórico del informe (28 ago – 13 sep)</h4>
         <p class="an-hint">Registra en el calendario y en cortes de Tianguis los totales de esas 10 jornadas, repartidos entre Efectivo/Tarjeta/Transferencia según el informe. No modifica tu inventario.</p>
@@ -3752,7 +3775,305 @@
     });
   }
 
-  // ---------- HISTÓRICO DEL INFORME (28 ago - 13 sep, Tianguis) ----------
+  // ================= REPORTE DE VENTAS (semanal / mensual) =================
+  document.getElementById('report-mode').addEventListener('change', function(){
+    var isWeek = this.value === 'week';
+    document.getElementById('report-week-field').style.display = isWeek ? 'block' : 'none';
+    document.getElementById('report-month-field').style.display = isWeek ? 'none' : 'block';
+  });
+
+  function pad2(n){ return (n < 10 ? '0' : '') + n; }
+  function isoWeekValue(d){
+    // Devuelve "YYYY-Www" (semana ISO, lunes a domingo) para prellenar el input.
+    var date = new Date(d.getTime());
+    date.setHours(0,0,0,0);
+    date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
+    var week1 = new Date(date.getFullYear(), 0, 4);
+    var weekNo = 1 + Math.round(((date - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+    return date.getFullYear() + '-W' + pad2(weekNo);
+  }
+  (function initReportDefaults(){
+    var now = new Date();
+    document.getElementById('report-week-input').value = isoWeekValue(now);
+    document.getElementById('report-month-input').value = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+  })();
+
+  function isoWeekToMonday(weekStr){
+    var parts = weekStr.split('-W');
+    var year = Number(parts[0]), week = Number(parts[1]);
+    var simple = new Date(year, 0, 1 + (week - 1) * 7);
+    var dow = simple.getDay() || 7;
+    var monday = new Date(simple);
+    monday.setDate(simple.getDate() - dow + 1);
+    monday.setHours(0,0,0,0);
+    return monday;
+  }
+  var DOW_LABELS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  var MONTH_LABELS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  function fmtDayShort(d){ return d.getDate() + ' ' + MONTH_LABELS[d.getMonth()].slice(0,3); }
+
+  function escAttr(s){ return String(s == null ? "" : s); }
+
+  function computePeriodStats(periodSales, label){
+    // periodSales: ventas (no canceladas) del rango a resumir.
+    var revenue = 0, pieces = 0, cogs = 0, cogsMissing = false, discountTotal = 0;
+    var byProductCode = {}; // code -> {name, qty, revenue, profit}
+    var byTalla = {}, byColor = {}, byPayment = {};
+    var historicalRevenue = 0;
+
+    periodSales.forEach(function(s){
+      revenue += s.total;
+      if(s.discountAmount) discountTotal += s.discountAmount;
+      if(s.historical){ historicalRevenue += s.total; }
+
+      if(s.paymentMethod === 'Mixto' && s.paymentBreakdown){
+        s.paymentBreakdown.forEach(function(b){ byPayment[b.method] = (byPayment[b.method] || 0) + b.amount; });
+      }else{
+        byPayment[s.paymentMethod] = (byPayment[s.paymentMethod] || 0) + s.total;
+      }
+
+      if(s.historical) return; // sin producto real ligado: no entra al detalle por artículo/talla/color/costo
+
+      s.items.forEach(function(it){
+        pieces += it.qty;
+        var p = it.productId ? products.find(function(x){ return x.id === it.productId; }) : null;
+        var code = p ? p.code : (it.code || it.name);
+        var lineRevenue = it.price * it.qty;
+        var lineCost = 0;
+        if(p && p.cost > 0){ lineCost = p.cost * it.qty; cogs += lineCost; }
+        else if(p && p.cost === 0){ cogsMissing = true; }
+
+        if(!byProductCode[code]) byProductCode[code] = { code: code, name: p ? p.name : it.name, qty: 0, revenue: 0, profit: 0, hasCost: !!(p && p.cost > 0) };
+        byProductCode[code].qty += it.qty;
+        byProductCode[code].revenue += lineRevenue;
+        byProductCode[code].profit += (lineRevenue - lineCost);
+
+        if(p && p.talla) byTalla[p.talla] = (byTalla[p.talla] || 0) + it.qty;
+        else byTalla['Sin talla'] = (byTalla['Sin talla'] || 0) + it.qty;
+
+        var colorKey = p && p.color ? p.color : null;
+        if(colorKey) byColor[colorKey] = (byColor[colorKey] || 0) + it.qty;
+      });
+    });
+
+    var profit = revenue - cogs;
+    var margin = revenue > 0 ? (profit / revenue * 100) : 0;
+    var topByRevenue = Object.keys(byProductCode).map(function(k){ return byProductCode[k]; })
+      .sort(function(a,b){ return b.revenue - a.revenue; });
+
+    return {
+      label: label, revenue: revenue, pieces: pieces, cogs: cogs, cogsMissing: cogsMissing,
+      profit: profit, margin: margin, discountTotal: discountTotal, historicalRevenue: historicalRevenue,
+      topByRevenue: topByRevenue, byTalla: byTalla, byColor: byColor, byPayment: byPayment,
+      saleCount: periodSales.length
+    };
+  }
+
+  function reportBarRow(label, value, max, isMoney){
+    var pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+    return '<div class="bar-row"><div class="bar-label">' + escapeHtml(label) + '</div>' +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="bar-val">' + (isMoney ? money(value) : value) + '</div></div>';
+  }
+
+  function reportProductTable(items, valueKey, valueLabel, limit){
+    var rows = items.slice(0, limit || 10).map(function(it){
+      return '<tr><td>' + escapeHtml(it.name) + ' <span class="tag">' + escapeHtml(it.code) + '</span></td>' +
+        '<td class="num">' + it.qty + '</td><td class="num">' + money(it[valueKey]) + '</td></tr>';
+    }).join('');
+    if(!rows) rows = '<tr><td colspan="3" style="color:var(--ink-soft);">Sin ventas de producto en este periodo.</td></tr>';
+    return '<table><tr><th>Producto</th><th class="num">Unid.</th><th class="num">' + valueLabel + '</th></tr>' + rows + '</table>';
+  }
+
+  function reportTwoColTable(obj, headLabel){
+    var entries = Object.keys(obj).map(function(k){ return [k, obj[k]]; }).sort(function(a,b){ return b[1]-a[1]; });
+    if(entries.length === 0) return '<p class="section-note">Sin datos.</p>';
+    var rows = entries.map(function(e){ return '<tr><td>' + escapeHtml(e[0]) + '</td><td class="num">' + e[1] + '</td></tr>'; }).join('');
+    return '<table><tr><th>' + headLabel + '</th><th class="num">Unid.</th></tr>' + rows + '</table>';
+  }
+
+  var REPORT_CSS = '<style>' +
+    ':root{--paper:#F7F3EC;--ink:#241F1A;--ink-soft:#5B5248;--denim:#5A1420;--denim-dark:#3A0D14;--marigold:#D98A2B;--line:#E3DACB;--card:#FFFFFF;--good:#3E6B4F;}' +
+    '@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#171512;--ink:#F1EBE1;--ink-soft:#B9AF9E;--denim:#C98A9A;--denim-dark:#E0B4BF;--marigold:#E4A24E;--line:#37312A;--card:#221E19;--good:#7FBF98;}}' +
+    ':root[data-theme="dark"]{--paper:#171512;--ink:#F1EBE1;--ink-soft:#B9AF9E;--denim:#C98A9A;--denim-dark:#E0B4BF;--marigold:#E4A24E;--line:#37312A;--card:#221E19;--good:#7FBF98;}' +
+    '*{box-sizing:border-box;}body{margin:0;background:var(--paper);color:var(--ink);font-family:ui-serif,Georgia,"Times New Roman",serif;}' +
+    '.wrap{max-width:760px;margin:0 auto;padding:28px 20px 60px;}' +
+    '.eyebrow{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;color:var(--ink-soft);letter-spacing:.02em;margin:0 0 6px;}' +
+    'h1{font-size:32px;line-height:1.1;margin:0 0 4px;font-weight:600;}' +
+    '.subtitle{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink-soft);font-size:15px;margin:0 0 28px;}' +
+    'h2{font-size:20px;font-weight:600;margin:40px 0 4px;border-top:1px solid var(--line);padding-top:18px;}' +
+    'h2 .num{color:var(--marigold);font-style:italic;margin-right:6px;}' +
+    '.section-note{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;color:var(--ink-soft);margin:0 0 18px;max-width:60ch;}' +
+    'p,li{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15.5px;line-height:1.55;}' +
+    '.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px;}' +
+    '.kpi{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:16px 14px;}' +
+    '.kpi .val{font-size:24px;font-weight:600;line-height:1.1;}' +
+    '.kpi .lbl{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12.5px;color:var(--ink-soft);margin-top:4px;}' +
+    'table{width:100%;border-collapse:collapse;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;margin-top:10px;}' +
+    'th{text-align:left;font-weight:600;color:var(--ink-soft);font-size:12px;padding:6px 8px;border-bottom:1px solid var(--ink);}' +
+    'td{padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top;}' +
+    'td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}' +
+    '.bar-row{display:flex;align-items:center;gap:10px;margin:9px 0;}' +
+    '.bar-label{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;width:72px;flex-shrink:0;color:var(--ink-soft);}' +
+    '.bar-track{flex:1;background:var(--line);border-radius:2px;height:20px;overflow:hidden;}' +
+    '.bar-fill{height:100%;background:var(--denim);border-radius:2px;}' +
+    '.bar-val{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;width:78px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums;}' +
+    '.callout{background:var(--card);border-left:3px solid var(--marigold);padding:14px 16px;border-radius:2px;margin:16px 0;}' +
+    '.callout p{margin:0 0 8px;}.callout p:last-child{margin-bottom:0;}' +
+    '.tag{display:inline-block;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:11.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--ink-soft);margin-right:6px;}' +
+    '.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;}' +
+    '@media (max-width:520px){.two-col{grid-template-columns:1fr;}h1{font-size:26px;}}' +
+    '.foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12.5px;color:var(--ink-soft);}' +
+    '</style>';
+
+  function buildSalesReportHtml(opts){
+    // opts: {mode:'week'|'month', start:Date, end:Date, locationLabel, locFilter}
+    var periodSales = sales.filter(function(s){
+      if(s.status === 'cancelled') return false;
+      if(opts.locFilter !== 'ambas' && s.location !== opts.locFilter) return false;
+      var t = new Date(s.timestamp);
+      return t >= opts.start && t <= opts.end;
+    });
+
+    var stats = computePeriodStats(periodSales, '');
+
+    var eyebrow, title, subEnd = new Date(opts.end);
+    var dailyBarsHtml = '';
+    if(opts.mode === 'week'){
+      eyebrow = 'ARO / ' + opts.locationLabel + ' · Semana del ' + fmtDayShort(opts.start) + ' al ' + fmtDayShort(subEnd) + ' de ' + subEnd.getFullYear();
+      title = 'Reporte semanal de ventas';
+      var maxDay = 0.0001, dayTotals = [];
+      for(var i=0;i<7;i++){
+        var dStart = new Date(opts.start); dStart.setDate(dStart.getDate()+i); dStart.setHours(0,0,0,0);
+        var dEnd = new Date(dStart); dEnd.setHours(23,59,59,999);
+        var dayRevenue = periodSales.filter(function(s){ var t=new Date(s.timestamp); return t>=dStart && t<=dEnd; }).reduce(function(a,s){return a+s.total;},0);
+        dayTotals.push({label: DOW_LABELS[i] + ' ' + dStart.getDate(), value: dayRevenue});
+        if(dayRevenue > maxDay) maxDay = dayRevenue;
+      }
+      dailyBarsHtml = dayTotals.map(function(d){ return reportBarRow(d.label, d.value, maxDay, true); }).join('');
+    }else{
+      eyebrow = 'ARO / ' + opts.locationLabel + ' · ' + MONTH_LABELS[opts.start.getMonth()].charAt(0).toUpperCase() + MONTH_LABELS[opts.start.getMonth()].slice(1) + ' ' + opts.start.getFullYear();
+      title = 'Reporte mensual de ventas';
+      // Semanas (lunes a domingo) dentro del mes
+      var weeks = [];
+      var cursor = new Date(opts.start);
+      cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7)); // retrocede al lunes de esa semana
+      while(cursor <= opts.end){
+        var wStart = new Date(cursor);
+        var wEnd = new Date(cursor); wEnd.setDate(wEnd.getDate()+6); wEnd.setHours(23,59,59,999);
+        weeks.push({ start: new Date(Math.max(wStart, opts.start)), end: new Date(Math.min(wEnd, opts.end)) });
+        cursor.setDate(cursor.getDate()+7);
+      }
+      var maxWeek = 0.0001;
+      var weekStats = weeks.map(function(w, idx){
+        var wSales = periodSales.filter(function(s){ var t=new Date(s.timestamp); return t>=w.start && t<=w.end; });
+        var st = computePeriodStats(wSales, 'Semana ' + (idx+1) + ' (' + fmtDayShort(w.start) + ' – ' + fmtDayShort(w.end) + ')');
+        if(st.revenue > maxWeek) maxWeek = st.revenue;
+        return st;
+      });
+      dailyBarsHtml = weekStats.map(function(st){ return reportBarRow('Sem. ' + (weekStats.indexOf(st)+1), st.revenue, maxWeek, true); }).join('');
+
+      var weekSections = weekStats.map(function(st){
+        return '<h2 style="margin-top:30px;font-size:17px;">' + escapeHtml(st.label) + '</h2>' +
+          '<p class="section-note">' + money(st.revenue) + ' en ' + st.saleCount + ' venta(s), ' + st.pieces + ' prenda(s).</p>' +
+          reportProductTable(st.topByRevenue, 'revenue', 'Ingreso', 5);
+      }).join('');
+    }
+
+    var paymentEntries = Object.keys(stats.byPayment).map(function(k){ return [k, stats.byPayment[k]]; }).sort(function(a,b){return b[1]-a[1];});
+    var paymentTotal = paymentEntries.reduce(function(a,e){return a+e[1];},0) || 1;
+    var paymentTableHtml = '<table><tr><th>Método</th><th class="num">%</th><th class="num">Monto</th></tr>' +
+      paymentEntries.map(function(e){ return '<tr><td>' + escapeHtml(e[0]) + '</td><td class="num">' + (e[1]/paymentTotal*100).toFixed(1) + '%</td><td class="num">' + money(e[1]) + '</td></tr>'; }).join('') +
+      '</table>';
+
+    var costNote = stats.cogsMissing ? '<p class="section-note">Algunos productos vendidos no tienen costo registrado — la ganancia mostrada solo cuenta lo que sí conoces (sube tu CSV de costos en Análisis para completarlo).</p>' : '';
+    var historicalNote = stats.historicalRevenue > 0 ? '<p class="section-note">Incluye ' + money(stats.historicalRevenue) + ' de ventas históricas importadas, sin producto ligado — no aparecen en las tablas de artículo/talla/color.</p>' : '';
+    var discountNote = stats.discountTotal > 0 ? ' Se dieron ' + money(stats.discountTotal) + ' en descuentos sobre precio de lista.' : '';
+
+    var html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '<title>' + title + '</title>' + REPORT_CSS + '</head><body><div class="wrap">' +
+      '<p class="eyebrow">' + escapeHtml(eyebrow) + '</p>' +
+      '<h1>' + title + '</h1>' +
+      '<p class="subtitle">' + stats.saleCount + ' venta(s), ' + stats.pieces + ' prenda(s), ' + stats.topByRevenue.length + ' producto(s) distinto(s) en movimiento.' + discountNote + '</p>' +
+      '<div class="kpis">' +
+        '<div class="kpi"><div class="val">' + money(stats.revenue) + '</div><div class="lbl">Ingresos totales (MXN)</div></div>' +
+        '<div class="kpi"><div class="val" style="color:var(--good);">' + money(stats.profit) + '</div><div class="lbl">Ganancia real (después de costo)</div></div>' +
+        '<div class="kpi"><div class="val">' + stats.pieces + '</div><div class="lbl">Prendas vendidas</div></div>' +
+        '<div class="kpi"><div class="val">' + stats.margin.toFixed(1) + '%</div><div class="lbl">Margen promedio</div></div>' +
+      '</div>' +
+
+      '<h2><span class="num">01</span>' + (opts.mode === 'week' ? 'Ventas por día' : 'Ventas por semana') + '</h2>' +
+      dailyBarsHtml +
+
+      '<h2><span class="num">02</span>Productos más vendidos</h2>' +
+      '<p class="section-note">Por ingresos generados.</p>' +
+      reportProductTable(stats.topByRevenue, 'revenue', 'Ingreso', 10) +
+
+      '<div class="two-col">' +
+        '<div><h2 style="margin-top:24px;"><span class="num">03</span>Por talla</h2>' + reportTwoColTable(stats.byTalla, 'Talla') + '</div>' +
+        '<div><h2 style="margin-top:24px;"><span class="num">04</span>Por color</h2>' + reportTwoColTable(stats.byColor, 'Color') + '</div>' +
+      '</div>' +
+
+      '<h2><span class="num">05</span>Forma de pago</h2>' +
+      paymentTableHtml +
+
+      '<h2><span class="num">06</span>Ganancia real</h2>' +
+      '<p class="section-note">Cruzando cada venta con el costo por prenda de tu inventario.</p>' + costNote + historicalNote +
+      '<div class="kpis">' +
+        '<div class="kpi"><div class="val">' + money(stats.cogs) + '</div><div class="lbl">Costo de la mercancía vendida</div></div>' +
+        '<div class="kpi"><div class="val" style="color:var(--good);">' + money(stats.profit) + '</div><div class="lbl">Ganancia neta del periodo</div></div>' +
+      '</div>' +
+      '<p class="section-note" style="margin-top:22px;">Productos que más ganancia en pesos te dejaron:</p>' +
+      reportProductTable(stats.topByRevenue.slice().sort(function(a,b){return b.profit-a.profit;}), 'profit', 'Ganancia', 5) +
+
+      (opts.mode === 'month' ? '<h2><span class="num">07</span>Desglose por semana</h2>' + weekSections : '') +
+
+      '<div class="foot">Generado desde tu punto de venta ARO el ' + new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) + '. Ubicación: ' + escapeHtml(opts.locationLabel) + '.</div>' +
+      '</div></body></html>';
+
+    return html;
+  }
+
+  document.getElementById('btn-generate-report').addEventListener('click', function(){
+    var mode = document.getElementById('report-mode').value;
+    var locFilter = document.getElementById('report-location').value;
+    var locationLabel = locFilter === 'ambas' ? 'Tianguis + Local' : LOCATIONS[locFilter];
+    var opts = { mode: mode, locFilter: locFilter, locationLabel: locationLabel };
+
+    if(mode === 'week'){
+      var weekVal = document.getElementById('report-week-input').value;
+      if(!weekVal){ toast("Elige una semana"); return; }
+      opts.start = isoWeekToMonday(weekVal);
+      opts.end = new Date(opts.start); opts.end.setDate(opts.end.getDate()+6); opts.end.setHours(23,59,59,999);
+    }else{
+      var monthVal = document.getElementById('report-month-input').value;
+      if(!monthVal){ toast("Elige un mes"); return; }
+      var mparts = monthVal.split('-');
+      var y = Number(mparts[0]), m = Number(mparts[1]);
+      opts.start = new Date(y, m-1, 1, 0,0,0,0);
+      opts.end = new Date(y, m, 0, 23,59,59,999);
+    }
+
+    var html = buildSalesReportHtml(opts);
+    var dataUri = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    var win = window.open();
+    if(win){
+      win.document.write(html);
+      win.document.close();
+    }else{
+      var a = document.createElement('a');
+      a.href = dataUri;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    toast("Reporte generado");
+  });
+
+
   var TIANGUIS_HISTORICO = [
     { date: '2026-08-28', total: 10803 },
     { date: '2026-08-29', total: 5989 },
