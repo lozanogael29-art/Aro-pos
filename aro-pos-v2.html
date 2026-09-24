@@ -1435,6 +1435,12 @@
 
   // ---------- VENTAS ACTIVAS (excluye canceladas) ----------
   function activeSales(){ return sales.filter(function(s){ return s.status !== 'cancelled'; }); }
+  function isLumpHistorical(s){
+    // Venta histórica "resumen" sin ningún producto ligado (no cuenta en piezas/costo/ganancia).
+    if(!s.historical) return false;
+    return !s.items.some(function(it){ return it.productId; });
+  }
+
   function paymentLabel(s){
     if(s.paymentMethod === 'Mixto' && s.paymentBreakdown){
       return s.paymentBreakdown.map(function(b){ return b.method + ' ' + money(b.amount); }).join(' + ');
@@ -3622,7 +3628,7 @@
     sales.filter(function(s){ return s.status !== 'cancelled'; }).forEach(function(s){
       if(s.location === 'tianguis') tianguisRevenue += s.total;
       else localRevenue += s.total;
-      if(s.historical && s.location === 'tianguis') return; // el histórico de Tianguis es un total sin detalle por artículo; el de Local sí trae producto y cantidad reales
+      if(isLumpHistorical(s)) return; // ventas históricas sin ningún producto ligado quedan fuera del detalle por artículo
       s.items.forEach(function(it){
         var p = products.find(function(x){ return x.id === it.productId; });
         var code = p ? p.code : it.name;
@@ -3650,7 +3656,7 @@
 
     var totalRevenue = tianguisRevenue + localRevenue + onlineRevenue;
     var totalGastos = gastos.reduce(function(a,g){ return a + g.amount; }, 0);
-    var historicalRevenue = sales.filter(function(s){ return s.historical && s.status !== 'cancelled' && s.location === 'tianguis'; })
+    var historicalRevenue = sales.filter(function(s){ return s.status !== 'cancelled' && isLumpHistorical(s); })
       .reduce(function(a,s){ return a + s.total; }, 0);
     // La ganancia y el margen excluyen el histórico de Tianguis (solo trae el total del día, sin costo por
     // producto). El histórico de Local sí trae producto y cantidad, así que sí entra aquí — su costo
@@ -3837,7 +3843,7 @@
     periodSales.forEach(function(s){
       revenue += s.total;
       if(s.discountAmount) discountTotal += s.discountAmount;
-      if(s.historical && s.location === 'tianguis'){ historicalRevenue += s.total; } // solo el histórico de Tianguis es un total sin detalle
+      if(isLumpHistorical(s)){ historicalRevenue += s.total; } // ventas históricas sin ningún producto ligado
 
       if(s.paymentMethod === 'Mixto' && s.paymentBreakdown){
         s.paymentBreakdown.forEach(function(b){ byPayment[b.method] = (byPayment[b.method] || 0) + b.amount; });
@@ -3845,7 +3851,7 @@
         byPayment[s.paymentMethod] = (byPayment[s.paymentMethod] || 0) + s.total;
       }
 
-      if(s.historical && s.location === 'tianguis') return; // el histórico de Tianguis no trae producto/cantidad real; el de Local sí
+      if(isLumpHistorical(s)) return; // sin ningún producto ligado: no entra al detalle por artículo/talla/color/costo
 
       s.items.forEach(function(it){
         pieces += it.qty;
