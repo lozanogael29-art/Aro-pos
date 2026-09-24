@@ -3622,13 +3622,13 @@
     sales.filter(function(s){ return s.status !== 'cancelled'; }).forEach(function(s){
       if(s.location === 'tianguis') tianguisRevenue += s.total;
       else localRevenue += s.total;
-      if(s.historical) return; // los registros históricos solo cuentan en el total, no en el detalle por producto
+      if(s.historical && s.location === 'tianguis') return; // el histórico de Tianguis es un total sin detalle por artículo; el de Local sí trae producto y cantidad reales
       s.items.forEach(function(it){
         var p = products.find(function(x){ return x.id === it.productId; });
         var code = p ? p.code : it.name;
         qtySoldByCode[code] = (qtySoldByCode[code] || 0) + it.qty;
         if(p && p.cost > 0){ cogsKnown += p.cost * it.qty; }
-        else if(p && p.cost === 0){ cogsMissing = true; }
+        else{ cogsMissing = true; }
       });
     });
 
@@ -3643,18 +3643,18 @@
           var p = products.find(function(x){ return x.code === it.code; });
           qtySoldByCode[it.code] = (qtySoldByCode[it.code] || 0) + it.qty;
           if(p && p.cost > 0){ cogsKnown += p.cost * it.qty; }
-          else if(p && p.cost === 0){ cogsMissing = true; }
+          else{ cogsMissing = true; }
         });
       });
     }catch(e){}
 
     var totalRevenue = tianguisRevenue + localRevenue + onlineRevenue;
     var totalGastos = gastos.reduce(function(a,g){ return a + g.amount; }, 0);
-    var historicalRevenue = sales.filter(function(s){ return s.historical && s.status !== 'cancelled'; })
+    var historicalRevenue = sales.filter(function(s){ return s.historical && s.status !== 'cancelled' && s.location === 'tianguis'; })
       .reduce(function(a,s){ return a + s.total; }, 0);
-    // La ganancia y el margen SOLO se calculan sobre ventas con costo real conocido —
-    // las ventas históricas importadas no tienen costo por producto y se excluyen aquí
-    // (si se incluyeran como si fueran 100% ganancia, inflarían el margen artificialmente).
+    // La ganancia y el margen excluyen el histórico de Tianguis (solo trae el total del día, sin costo por
+    // producto). El histórico de Local sí trae producto y cantidad, así que sí entra aquí — su costo
+    // desconocido ya se refleja en la advertencia de "faltan costos" más abajo.
     var trackableRevenue = totalRevenue - historicalRevenue;
     var profit = trackableRevenue - cogsKnown - totalGastos;
     var margin = trackableRevenue > 0 ? (profit / trackableRevenue * 100) : 0;
@@ -3664,7 +3664,7 @@
     document.getElementById('an-margin').textContent = margin.toFixed(1) + '%';
     var gastosNote = [];
     if(totalGastos > 0) gastosNote.push('La ganancia ya descuenta ' + money(totalGastos) + ' en gastos registrados.');
-    if(historicalRevenue > 0) gastosNote.push('Ganancia y margen solo cuentan tus ' + money(trackableRevenue) + ' en ventas con costo registrado — los ' + money(historicalRevenue) + ' de ventas históricas importadas no tienen costo por producto y no entran en este cálculo (su ganancia real ya la calculaste en tu informe aparte).');
+    if(historicalRevenue > 0) gastosNote.push('Ganancia y margen no cuentan ' + money(historicalRevenue) + ' del histórico de Tianguis importado (solo trae el total del día, sin costo por producto — su ganancia real ya la calculaste en tu informe aparte).');
     document.getElementById('an-gastos-note').textContent = gastosNote.join(' ');
 
     var warnEl = document.getElementById('an-cost-warning');
@@ -3837,7 +3837,7 @@
     periodSales.forEach(function(s){
       revenue += s.total;
       if(s.discountAmount) discountTotal += s.discountAmount;
-      if(s.historical){ historicalRevenue += s.total; }
+      if(s.historical && s.location === 'tianguis'){ historicalRevenue += s.total; } // solo el histórico de Tianguis es un total sin detalle
 
       if(s.paymentMethod === 'Mixto' && s.paymentBreakdown){
         s.paymentBreakdown.forEach(function(b){ byPayment[b.method] = (byPayment[b.method] || 0) + b.amount; });
@@ -3845,7 +3845,7 @@
         byPayment[s.paymentMethod] = (byPayment[s.paymentMethod] || 0) + s.total;
       }
 
-      if(s.historical) return; // sin producto real ligado: no entra al detalle por artículo/talla/color/costo
+      if(s.historical && s.location === 'tianguis') return; // el histórico de Tianguis no trae producto/cantidad real; el de Local sí
 
       s.items.forEach(function(it){
         pieces += it.qty;
@@ -3854,7 +3854,7 @@
         var lineRevenue = it.price * it.qty;
         var lineCost = 0;
         if(p && p.cost > 0){ lineCost = p.cost * it.qty; cogs += lineCost; }
-        else if(p && p.cost === 0){ cogsMissing = true; }
+        else{ cogsMissing = true; }
 
         if(!byProductCode[code]) byProductCode[code] = { code: code, name: p ? p.name : it.name, qty: 0, revenue: 0, profit: 0, hasCost: !!(p && p.cost > 0) };
         byProductCode[code].qty += it.qty;
@@ -3892,7 +3892,8 @@
 
   function reportProductTable(items, valueKey, valueLabel, limit){
     var rows = items.slice(0, limit || 10).map(function(it){
-      return '<tr><td>' + escapeHtml(it.name) + ' <span class="tag">' + escapeHtml(it.code) + '</span></td>' +
+      var tag = (it.code && it.code !== it.name) ? ' <span class="tag">' + escapeHtml(it.code) + '</span>' : '';
+      return '<tr><td>' + escapeHtml(it.name) + tag + '</td>' +
         '<td class="num">' + it.qty + '</td><td class="num">' + money(it[valueKey]) + '</td></tr>';
     }).join('');
     if(!rows) rows = '<tr><td colspan="3" style="color:var(--ink-soft);">Sin ventas de producto en este periodo.</td></tr>';
@@ -4025,7 +4026,7 @@
       '</table>';
 
     var costNote = stats.cogsMissing ? '<p class="section-note">Algunos productos vendidos no tienen costo registrado — la ganancia mostrada solo cuenta lo que sí conoces (sube tu CSV de costos en Análisis para completarlo).</p>' : '';
-    var historicalNote = stats.historicalRevenue > 0 ? '<p class="section-note" style="margin-top:-14px;">De este periodo, ' + money(stats.historicalRevenue) + ' son ventas históricas importadas (sin producto, talla ni color ligado) — por eso <b>no suman</b> a "prendas vendidas" ni a las tablas de producto/talla/color/ganancia; solo entran al total de ingresos y forma de pago.</p>' : '';
+    var historicalNote = stats.historicalRevenue > 0 ? '<p class="section-note" style="margin-top:-14px;">De este periodo, ' + money(stats.historicalRevenue) + ' son del histórico de Tianguis importado del informe (solo el total del día, sin producto por línea) — por eso <b>no suman</b> a "prendas vendidas" ni a las tablas de producto/talla/color; sí entran al total de ingresos y forma de pago. El histórico de Local sí trae producto y cantidad, así que ya está incluido en todas las tablas (aunque sin costo, por lo que no se le calcula ganancia).</p>' : '';
     var discountNote = stats.discountTotal > 0 ? ' Se dieron ' + money(stats.discountTotal) + ' en descuentos sobre precio de lista.' : '';
 
     var html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
