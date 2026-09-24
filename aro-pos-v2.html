@@ -2241,6 +2241,7 @@
           '<div class="inv-actions">' +
             '<button class="icon-btn stock-minus">–</button>' +
             '<button class="icon-btn stock-plus">+</button>' +
+            '<button class="icon-btn traspaso-btn" title="Traspasar">🔁</button>' +
             '<button class="icon-btn edit-btn">✎</button>' +
           '</div>' +
         '</div>' +
@@ -2260,6 +2261,10 @@
         var p = products.find(function(x){ return x.id === id; });
         setStock(p, currentLocation, getStock(p, currentLocation) - 1);
         saveProduct(p); renderInventory(); updateHeaderSub();
+      });
+      row.querySelector('.traspaso-btn').addEventListener('click', function(e){
+        e.stopPropagation();
+        openTraspasoModal(id);
       });
       row.querySelector('.edit-btn').addEventListener('click', function(e){
         e.stopPropagation();
@@ -2430,13 +2435,23 @@
     updateTraspasoHint();
   }
 
-  document.getElementById('btn-traspaso').addEventListener('click', function(){
+  function openTraspasoModal(preselectId){
     if(products.length === 0){ toast("Agrega productos antes de traspasar"); return; }
     traspasoFrom = currentLocation;
     populateTraspasoProductSelect();
+    if(preselectId){
+      document.getElementById('tr-product').value = preselectId;
+    }
     updateDirUI();
     document.getElementById('tr-qty').value = "";
     document.getElementById('traspaso-modal-backdrop').classList.add('show');
+    if(preselectId){
+      document.getElementById('tr-qty').focus();
+    }
+  }
+
+  document.getElementById('btn-traspaso').addEventListener('click', function(){
+    openTraspasoModal(null);
   });
   document.getElementById('traspaso-modal-close').addEventListener('click', function(){
     document.getElementById('traspaso-modal-backdrop').classList.remove('show');
