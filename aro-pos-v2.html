@@ -2612,15 +2612,15 @@
     return v;
   }
   document.getElementById('btn-export-inventory').addEventListener('click', function(){
-    var header = ['Codigo','Nombre','Color','Talla','Categoria','Precio','Costo','Stock Tianguis','Stock Local','Stock Total'];
+    var header = ['Codigo','Descripcion','Color','Talla','Cant. Tianguis','Cant. Local','Total','Categoria','Precio','Costo'];
     var lines = [header.join(',')];
     products.slice().sort(function(a,b){ return (a.code||"").localeCompare(b.code||""); }).forEach(function(p){
       normalizeStock(p);
       var total = (Number(p.stock.tianguis) || 0) + (Number(p.stock.local) || 0);
       lines.push([
         toCsvField(p.code), toCsvField(p.name), toCsvField(p.color), toCsvField(p.talla),
-        toCsvField(p.category), toCsvField(p.price), toCsvField(p.cost),
-        toCsvField(p.stock.tianguis), toCsvField(p.stock.local), toCsvField(total)
+        toCsvField(p.stock.tianguis), toCsvField(p.stock.local), toCsvField(total),
+        toCsvField(p.category), toCsvField(p.price), toCsvField(p.cost)
       ].join(','));
     });
     var csv = lines.join('\r\n');
@@ -2659,14 +2659,14 @@
         if(!code) return;
         var p = products.find(function(x){ return x.code === code; });
         if(!p){ notFound++; return; }
-        var name = findField(row, ['nombre','name']);
+        var name = findField(row, ['nombre','name','descripcion','descripción']);
         var color = findField(row, ['color']);
         var talla = findField(row, ['talla','size']);
         var category = findField(row, ['categoria','categoría','category']);
         var priceRaw = findField(row, ['precio','price']);
         var costRaw = findField(row, ['costo','cost']);
-        var stockTianguisRaw = findField(row, ['stock tianguis','tianguis']);
-        var stockLocalRaw = findField(row, ['stock local','local']);
+        var stockTianguisRaw = findField(row, ['stock tianguis','tianguis','cant. tianguis','cant tianguis']);
+        var stockLocalRaw = findField(row, ['stock local','local','cant. local','cant local']);
 
         if(name) p.name = name;
         if(color) p.color = color;
