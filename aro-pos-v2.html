@@ -2628,30 +2628,57 @@
   }
   document.getElementById('btn-export-inventory').addEventListener('click', function(){
     var header = ['Codigo','Descripcion','Color','Talla','Cant. Tianguis','Cant. Local','Total','Categoria','Precio','Costo'];
-    var lines = [header.join(',')];
+    var rows = [header];
     products.slice().sort(function(a,b){ return (a.code||"").localeCompare(b.code||""); }).forEach(function(p){
       normalizeStock(p);
       var total = (Number(p.stock.tianguis) || 0) + (Number(p.stock.local) || 0);
-      lines.push([
-        toCsvField(p.code), toCsvField(p.name), toCsvField(p.color), toCsvField(p.talla),
-        toCsvField(p.stock.tianguis), toCsvField(p.stock.local), toCsvField(total),
-        toCsvField(p.category), toCsvField(p.price), toCsvField(p.cost)
-      ].join(','));
+      rows.push([p.code, p.name, p.color, p.talla, p.stock.tianguis, p.stock.local, total, p.category, p.price, p.cost]);
     });
-    var csv = lines.join('\r\n');
+    var csvLines = rows.map(function(r){ return r.map(toCsvField).join(','); });
+    var csv = csvLines.join('\r\n');
     var today = new Date().toISOString().slice(0,10);
     var filename = 'inventario-aro-' + today + '.csv';
-    // Usamos data: URI (en vez de Blob + createObjectURL) porque en Safari de iPhone
-    // los links con blob: a veces "descargan" un archivo vacío o roto.
-    var dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + csv);
-    var a = document.createElement('a');
-    a.href = dataUri;
-    a.download = filename;
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    toast("Inventario exportado — edítalo y vuelve a subirlo con \"⬆ Actualizar\" para aplicar los cambios");
+
+    var tableRows = rows.map(function(r, i){
+      var tag = i === 0 ? 'th' : 'td';
+      return '<tr>' + r.map(function(c){ return '<' + tag + '>' + escapeHtml(String(c == null ? '' : c)) + '</' + tag + '>'; }).join('') + '</tr>';
+    }).join('');
+
+    var page = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '<title>Inventario ARO</title>' +
+      '<style>' +
+      'body{font-family:-apple-system,system-ui,sans-serif;background:#F2E9D8;color:#1B1712;margin:0;padding:20px 14px 60px;}' +
+      'h1{font-size:19px;margin:0 0 4px;}' +
+      'p.hint{font-size:13px;color:#6b6258;margin:0 0 18px;}' +
+      '#dl-btn{display:block;text-align:center;background:#5A1420;color:#fff;text-decoration:none;font-weight:600;padding:14px;border-radius:8px;font-size:15px;margin-bottom:22px;}' +
+      '.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e3dacb;border-radius:8px;}' +
+      'table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap;}' +
+      'th{background:#5A1420;color:#fff;text-align:left;padding:8px 10px;position:sticky;top:0;}' +
+      'td{padding:7px 10px;border-bottom:1px solid #e3dacb;}' +
+      'tr:nth-child(even) td{background:#fbf8f2;}' +
+      '</style></head><body>' +
+      '<h1>📤 Inventario ARO</h1>' +
+      '<p class="hint">Toca el botón para descargar el CSV. Si no descarga solo, mantén presionado el botón y elige "Descargar enlace" — o copia la tabla de abajo.</p>' +
+      '<a id="dl-btn" href="#">⬇️ Descargar CSV</a>' +
+      '<div class="tablewrap"><table>' + tableRows + '</table></div>' +
+      '<script>' +
+      'var csvText = ' + JSON.stringify('\ufeff' + csv) + ';' +
+      'var blob = new Blob([csvText], {type: "text/csv;charset=utf-8;"});' +
+      'var url = URL.createObjectURL(blob);' +
+      'var a = document.getElementById("dl-btn");' +
+      'a.href = url;' +
+      'a.download = ' + JSON.stringify(filename) + ';' +
+      '</' + 'script>' +
+      '</body></html>';
+
+    var win = window.open();
+    if(win){
+      win.document.write(page);
+      win.document.close();
+    }else{
+      toast("Tu navegador bloqueó la ventana nueva — permite ventanas emergentes para este sitio e inténtalo otra vez");
+    }
   });
 
   document.getElementById('btn-import-inventory').addEventListener('click', function(){
